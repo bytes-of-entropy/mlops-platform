@@ -1,0 +1,50 @@
+# The quickstart profile. A reviewer on a laptop is the median reviewer, so the
+# ten-minute path has to fit in 4 GB of RAM and 2 CPUs with nothing else closed.
+#
+# It runs the spine minus the "full" profile services (the second Spark worker and
+# Airflow), with every limit cut to fit the envelope. The footprint is asserted by
+# tests/test_compose_contract.py rather than trusted.
+
+services:
+  spark-master:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 512m
+
+  spark-worker-1:
+    environment:
+      SPARK_MODE: worker
+      SPARK_MASTER_URL: spark://spark-master:7077
+      SPARK_RPC_AUTHENTICATION_ENABLED: "no"
+      SPARK_RPC_ENCRYPTION_ENABLED: "no"
+      SPARK_SSL_ENABLED: "no"
+      SPARK_WORKER_MEMORY: 1g
+      SPARK_WORKER_CORES: "1"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1536m
+
+  minio:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 512m
+
+  postgres:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 512m
+
+  mlflow:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 768m
