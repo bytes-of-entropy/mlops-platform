@@ -31,7 +31,8 @@ switch ($Target) {
         Write-Output 'setup           create .venv and install dev dependencies'
         Write-Output 'test            run the test suite'
         Write-Output 'lint            formatting, ruff and mypy, changing nothing'
-        Write-Output 'check           everything the gate requires: lint then test'
+        Write-Output 'hooks           run every pre-commit hook over the whole tree'
+        Write-Output 'check           everything the gate requires: lint, hooks, test'
         Write-Output 'up              start the full spine (all services)'
         Write-Output 'up-quickstart   start the 4 GB / 2 CPU reviewer profile'
         Write-Output 'down            stop and remove containers, KEEP volumes'
@@ -41,6 +42,10 @@ switch ($Target) {
         Invoke-Checked $BootstrapPy @('-3', '-m', 'venv', '.venv')
         Invoke-Checked $Py @('-m', 'pip', 'install', '--upgrade', 'pip')
         Invoke-Checked $Py @('-m', 'pip', 'install', '-e', '.[dev]')
+        # Mirrors the Makefile: hooks are per-clone, so a committed config installs nothing on
+        # its own. Absent .git is not an error -- the CI hooks job runs them either way.
+        if (Test-Path '.git') { Invoke-Checked $Py @('-m', 'pre_commit', 'install') }
+        else { Write-Output 'no .git here, so no hook was installed; the CI hooks job runs them regardless' }
     }
     'test' { Invoke-Checked $Py @('-m', 'pytest') }
     'lint' {
@@ -48,10 +53,12 @@ switch ($Target) {
         Invoke-Checked $Py @('-m', 'ruff', 'check', '.')
         Invoke-Checked $Py @('-m', 'mypy')
     }
+    'hooks' { Invoke-Checked $Py @('-m', 'pre_commit', 'run', '--all-files') }
     'check' {
         Invoke-Checked $Py @('-m', 'ruff', 'format', '--check', '.')
         Invoke-Checked $Py @('-m', 'ruff', 'check', '.')
         Invoke-Checked $Py @('-m', 'mypy')
+        Invoke-Checked $Py @('-m', 'pre_commit', 'run', '--all-files')
         Invoke-Checked $Py @('-m', 'pytest')
     }
     'fmt' {

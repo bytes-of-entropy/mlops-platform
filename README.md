@@ -56,6 +56,7 @@ The contract suite runs with no container runtime installed, which is what makes
 | The Spark worker's heap fits inside its container limit | `test_spark_worker_heap_fits_its_container` |
 | The Makefile and its Windows mirror have not drifted | `test_no_target_exists_in_only_one_entrypoint` |
 | A pinned tool is the same version everywhere it is named | `test_every_hook_that_mirrors_a_pinned_tool_runs_the_pinned_version`, `test_the_interpreter_running_this_suite_has_the_pinned_ruff` |
+| The committed hook config is something that actually runs | `test_both_entrypoints_install_the_git_hooks_during_setup`, `test_the_gate_runs_the_hooks_in_both_entrypoints_and_in_ci` |
 | `down` keeps volumes and only `clean` removes them | `test_down_keeps_volumes_and_clean_removes_them` |
 | `down` then `up` reaches the same healthy set, twice, with state intact | `tests/test_idempotency.py` (needs a runtime) |
 
@@ -88,10 +89,10 @@ machine. The contract suite below it is what runs everywhere, and it is green.
 
 ```bash
 make setup    # creates .venv from the pinned dev dependencies
-make check    # everything the gate requires: formatting, ruff, mypy, then the suite
+make check    # the gate: formatting, ruff, mypy, the pre-commit hooks, then the suite
 ```
 
-`make check` is `make lint` then `make test`, and either runs on its own. On Windows, `./make.ps1
+`make check` is `make lint`, `make hooks` and `make test`, and each runs on its own. On Windows, `./make.ps1
 <target>` takes the same names; a test fails if a target exists in one entrypoint and not the other.
 
 Current output on the authoring machine, which has no container runtime:
@@ -100,7 +101,8 @@ Current output on the authoring machine, which has no container runtime:
 ruff format --check .   15 files already formatted
 ruff check .            All checks passed!
 mypy                    Success: no issues found in 8 source files
-pytest                  27 passed, 3 skipped in 0.26s
+pre-commit --all-files  8 hooks, all Passed
+pytest                  29 passed, 3 skipped in 0.29s
 ```
 
 The formatter counts fifteen files and mypy counts eight because they are looking at different things.

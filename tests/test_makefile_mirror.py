@@ -76,3 +76,51 @@ def test_both_entrypoints_wait_the_same_length_of_time() -> None:
     assert powershell, "make.ps1 has no $WaitTimeout variable to check"
     assert int(make.group(1)) == int(powershell.group(1))
     assert int(make.group(1)) > 0, "a zero timeout is how compose spells 'wait forever'"
+
+
+#: The setup body of each entrypoint, isolated so a check can look inside one rather than only at
+#: the list of target names. A make target ends at the next unindented line; the PowerShell switch
+#: branch ends at its closing brace, which is the only one at four-space indentation.
+SETUP_BODY = {
+    "Makefile": re.compile(r"^setup:.*?(?=^\S)", re.MULTILINE | re.DOTALL),
+    "make.ps1": re.compile(r"^    'setup' \{.*?^    \}", re.MULTILINE | re.DOTALL),
+}
+
+
+def test_both_entrypoints_install_the_git_hooks_during_setup() -> None:
+    """The parity test compares target *names*, so a divergence inside one body is invisible to it.
+
+    Worth naming because the hook config was committed long before anything ran it: a
+    ``.pre-commit-config.yaml`` that no installed hook and no CI job executes reads as a guarantee
+    and is not one. If one entrypoint stops installing the hook, the machine that used that
+    entrypoint is the one whose commits quietly stop being checked.
+    """
+    for name, pattern in SETUP_BODY.items():
+        body = pattern.search((REPO_ROOT / name).read_text(encoding="utf-8"))
+        assert body, f"{name} has no setup target for this test to look inside"
+        assert "pre_commit" in body.group(0), (
+            f"{name}'s setup does not install the git hooks, so a clone set up with it commits "
+            f"without them"
+        )
+
+
+def test_the_gate_runs_the_hooks_in_both_entrypoints_and_in_ci() -> None:
+    """Three places, because a hook set that runs in only some of them is a gate with a hole.
+
+    An installed hook covers a commit made on a machine that ran setup. CI covers the clone that
+    did not, and the commit made with ``--no-verify``. The gate target covers the tree as it stands
+    rather than only what the last commit touched. Dropping any one of the three leaves a route
+    that reaches main unchecked.
+    """
+    makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+    gate = re.search(r"^check:\s*(.+)$", makefile, re.MULTILINE)
+    assert gate, "the Makefile has no check target"
+    assert "hooks" in gate.group(1).split(), f"make check does not run the hooks: {gate.group(1)}"
+
+    powershell = (REPO_ROOT / "make.ps1").read_text(encoding="utf-8")
+    ps_check = re.search(r"^    'check' \{.*?^    \}", powershell, re.MULTILINE | re.DOTALL)
+    assert ps_check, "make.ps1 has no check branch"
+    assert "pre_commit" in ps_check.group(0), "make.ps1's check does not run the hooks"
+
+    workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert "pre_commit run --all-files" in workflow, "CI does not run the hooks"

@@ -13,6 +13,8 @@ repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.16.3
     hooks:
-      - id: ruff
+      # ruff-check, not the `ruff` alias: at this rev the old id still runs but announces itself
+      # as legacy, and an id that is on its way out is not what a pinned config should name.
+      - id: ruff-check
         args: ["--fix"]
       - id: ruff-format
