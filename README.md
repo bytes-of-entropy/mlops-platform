@@ -55,6 +55,7 @@ The contract suite runs with no container runtime installed, which is what makes
 | The quickstart fits in 4 GiB and 2.0 CPUs | `test_quickstart_fits_in_four_gigabytes`, `test_quickstart_fits_in_two_cpus` |
 | The Spark worker's heap fits inside its container limit | `test_spark_worker_heap_fits_its_container` |
 | The Makefile and its Windows mirror have not drifted | `test_no_target_exists_in_only_one_entrypoint` |
+| A pinned tool is the same version everywhere it is named | `test_every_hook_that_mirrors_a_pinned_tool_runs_the_pinned_version`, `test_the_interpreter_running_this_suite_has_the_pinned_ruff` |
 | `down` keeps volumes and only `clean` removes them | `test_down_keeps_volumes_and_clean_removes_them` |
 | `down` then `up` reaches the same healthy set, twice, with state intact | `tests/test_idempotency.py` (needs a runtime) |
 
@@ -96,14 +97,14 @@ make check    # everything the gate requires: formatting, ruff, mypy, then the s
 Current output on the authoring machine, which has no container runtime:
 
 ```
-ruff format --check .   14 files already formatted
+ruff format --check .   15 files already formatted
 ruff check .            All checks passed!
-mypy                    Success: no issues found in 7 source files
-pytest                  25 passed, 3 skipped in 0.06s
+mypy                    Success: no issues found in 8 source files
+pytest                  27 passed, 3 skipped in 0.26s
 ```
 
-The formatter counts fourteen files and mypy counts seven because they are looking at different things.
-There are seven Python files; the formatter also reads the seven Markdown files, where it formats
+The formatter counts fifteen files and mypy counts eight because they are looking at different things.
+There are eight Python files; the formatter also reads the seven Markdown files, where it formats
 `python`-fenced code blocks and leaves prose alone. A code sample in this repository's documentation is
 therefore held to the same style as the code, which is the intended behaviour rather than a side effect
 worth suppressing.
