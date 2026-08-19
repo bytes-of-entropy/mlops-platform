@@ -1,0 +1,10 @@
+# The working tree is authored on Windows and executed on Windows, Linux containers and
+# CI runners. Line endings are therefore decided here, once, rather than by whatever
+# core.autocrlf happens to be on each machine: a CRLF Makefile recipe or shell script
+# fails in a container in ways that look like a logic error.
+* text=auto eol=lf
+
+# Binary, never converted.
+*.png binary
+*.jpg binary
+*.parquet binary
