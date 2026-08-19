@@ -87,9 +87,24 @@ machine. The contract suite below it is what runs everywhere, and it is green.
 
 ```bash
 make setup    # creates .venv from the pinned dev dependencies
-make lint     # ruff + mypy
-make test     # contract suite; integration tests skip without a container runtime
+make check    # everything the gate requires: formatting, ruff, mypy, then the suite
 ```
+
+`make check` is `make lint` then `make test`, and either runs on its own. On Windows, `./make.ps1
+<target>` takes the same names; a test fails if a target exists in one entrypoint and not the other.
+
+Current output on the authoring machine, which has no container runtime:
+
+```
+ruff format --check .   7 files already formatted
+ruff check .            All checks passed!
+mypy                    Success: no issues found in 7 source files
+pytest                  25 passed, 3 skipped in 0.05s
+```
+
+The three skips are the integration tests, and the skip reason distinguishes Docker not being
+installed from Docker being installed but not running — because "install Docker" and "start Docker"
+are different instructions, and a probe that only checks whether the binary exists gives the wrong one.
 
 ## What I would do differently
 
