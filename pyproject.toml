@@ -24,7 +24,18 @@ line-length = 100
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B", "SIM", "PTH", "RUF"]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "PTH", "RUF", "ANN", "S"]
+ignore = [
+  # A Protocol-typed parameter is deliberately broad; ANN401 would forbid the only honest annotation.
+  "ANN401",
+  # Deprecated upstream: annotating `self` and `cls` is noise, not information.
+  "ANN101",
+  "ANN102",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# A test suite is assertions. S101 would forbid the only thing it does.
+"tests/**" = ["S101"]
 
 [tool.mypy]
 python_version = "3.11"

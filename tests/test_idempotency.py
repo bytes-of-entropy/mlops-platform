@@ -28,7 +28,7 @@ pytestmark = [pytest.mark.integration, requires_docker]
 
 
 def run(argv: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    return subprocess.run(  # noqa: S603 -- argv is built in this module, no shell, no input
         argv,
         cwd=REPO_ROOT,
         capture_output=True,

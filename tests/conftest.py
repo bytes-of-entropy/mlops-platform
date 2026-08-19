@@ -82,8 +82,7 @@ def probe_docker() -> str:
     if binary is None:
         return classify_docker_state(None, None)
     try:
-        # Fixed argv, a path resolved by ``which``, and no shell: nothing here is interpolated.
-        completed = subprocess.run(
+        completed = subprocess.run(  # noqa: S603 -- fixed argv, resolved path, no shell
             [binary, "info", "--format", "{{.ServerVersion}}"],
             capture_output=True,
             timeout=DAEMON_PROBE_TIMEOUT_SECONDS,
