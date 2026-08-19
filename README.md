@@ -96,11 +96,17 @@ make check    # everything the gate requires: formatting, ruff, mypy, then the s
 Current output on the authoring machine, which has no container runtime:
 
 ```
-ruff format --check .   7 files already formatted
+ruff format --check .   14 files already formatted
 ruff check .            All checks passed!
 mypy                    Success: no issues found in 7 source files
-pytest                  25 passed, 3 skipped in 0.05s
+pytest                  25 passed, 3 skipped in 0.06s
 ```
+
+The formatter counts fourteen files and mypy counts seven because they are looking at different things.
+There are seven Python files; the formatter also reads the seven Markdown files, where it formats
+`python`-fenced code blocks and leaves prose alone. A code sample in this repository's documentation is
+therefore held to the same style as the code, which is the intended behaviour rather than a side effect
+worth suppressing.
 
 The three skips are the integration tests, and the skip reason distinguishes Docker not being
 installed from Docker being installed but not running — because "install Docker" and "start Docker"

@@ -13,7 +13,7 @@ dependencies = []
 dev = [
   "pytest==8.2.2",
   "pyyaml==6.0.1",
-  "ruff==0.5.0",
+  "ruff==0.16.3",
   "mypy==1.10.0",
   "pre-commit==3.7.1",
   "types-PyYAML==6.0.12.20240311",
@@ -28,9 +28,6 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "PTH", "RUF", "ANN", "S"]
 ignore = [
   # A Protocol-typed parameter is deliberately broad; ANN401 would forbid the only honest annotation.
   "ANN401",
-  # Deprecated upstream: annotating `self` and `cls` is noise, not information.
-  "ANN101",
-  "ANN102",
 ]
 
 [tool.ruff.lint.per-file-ignores]

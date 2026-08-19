@@ -43,9 +43,9 @@ def test_every_quickstart_service_is_capped(
     compose: dict[str, Any], quickstart: dict[str, Any]
 ) -> None:
     for name, limits in quickstart_services(compose, quickstart).items():
-        assert (
-            "memory" in limits and "cpus" in limits
-        ), f"{name} runs uncapped in the quickstart, so the envelope is unenforced"
+        assert "memory" in limits and "cpus" in limits, (
+            f"{name} runs uncapped in the quickstart, so the envelope is unenforced"
+        )
 
 
 def test_quickstart_fits_in_four_gigabytes(
@@ -80,6 +80,6 @@ def test_spark_worker_heap_fits_its_container(quickstart: dict[str, Any]) -> Non
     worker = quickstart["services"]["spark-worker-1"]
     declared_heap = parse_memory_mib(worker["environment"]["SPARK_WORKER_MEMORY"])
     container = parse_memory_mib(worker["deploy"]["resources"]["limits"]["memory"])
-    assert (
-        declared_heap < container
-    ), f"SPARK_WORKER_MEMORY {declared_heap:.0f} MiB >= container limit {container:.0f} MiB"
+    assert declared_heap < container, (
+        f"SPARK_WORKER_MEMORY {declared_heap:.0f} MiB >= container limit {container:.0f} MiB"
+    )
