@@ -10,6 +10,11 @@ PY           := .venv/Scripts/python.exe
 BOOTSTRAP_PY := py -3
 endif
 
+# ``--wait`` on its own waits forever. A service that never reports healthy then hangs the
+# job until something outside this repository kills it, which loses the compose logs that
+# would have said why. Bounded, it exits nonzero and ``make logs`` still works.
+WAIT_TIMEOUT := 300
+
 .PHONY: help setup test lint fmt up up-quickstart down clean ps logs config
 
 help:
@@ -38,10 +43,10 @@ fmt:
 	$(PY) -m ruff check --fix .
 
 up:
-	$(COMPOSE) --profile full up -d --wait
+	$(COMPOSE) --profile full up -d --wait --wait-timeout $(WAIT_TIMEOUT)
 
 up-quickstart:
-	$(COMPOSE_QS) up -d --wait
+	$(COMPOSE_QS) up -d --wait --wait-timeout $(WAIT_TIMEOUT)
 
 down:
 	$(COMPOSE) --profile full down --remove-orphans

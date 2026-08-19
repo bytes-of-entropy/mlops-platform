@@ -14,6 +14,8 @@ $Compose = @('compose', '-f', 'compose/docker-compose.yml')
 $ComposeQs = @('compose', '-f', 'compose/docker-compose.yml', '-f', 'compose/docker-compose.quickstart.yml')
 $Py = '.venv/Scripts/python.exe'
 $BootstrapPy = 'py'
+# Kept in step with WAIT_TIMEOUT in the Makefile; a test fails if the two diverge.
+$WaitTimeout = '300'
 
 function Invoke-Checked {
     param([string]$Exe, [string[]]$Arguments)
@@ -48,8 +50,8 @@ switch ($Target) {
         Invoke-Checked $Py @('-m', 'ruff', 'format', '.')
         Invoke-Checked $Py @('-m', 'ruff', 'check', '--fix', '.')
     }
-    'up' { Invoke-Checked 'docker' ($Compose + @('--profile', 'full', 'up', '-d', '--wait')) }
-    'up-quickstart' { Invoke-Checked 'docker' ($ComposeQs + @('up', '-d', '--wait')) }
+    'up' { Invoke-Checked 'docker' ($Compose + @('--profile', 'full', 'up', '-d', '--wait', '--wait-timeout', $WaitTimeout)) }
+    'up-quickstart' { Invoke-Checked 'docker' ($ComposeQs + @('up', '-d', '--wait', '--wait-timeout', $WaitTimeout)) }
     'down' { Invoke-Checked 'docker' ($Compose + @('--profile', 'full', 'down', '--remove-orphans')) }
     'clean' { Invoke-Checked 'docker' ($Compose + @('--profile', 'full', 'down', '--remove-orphans', '--volumes')) }
     'ps' { Invoke-Checked 'docker' ($Compose + @('--profile', 'full', 'ps')) }
