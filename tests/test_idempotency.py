@@ -70,9 +70,9 @@ def test_down_then_up_reaches_the_same_healthy_set() -> None:
     bring_down()
     second = bring_up()
     try:
-        assert second == first, (
-            f"second cycle differs: only-first={first - second}, only-second={second - first}"
-        )
+        assert (
+            second == first
+        ), f"second cycle differs: only-first={first - second}, only-second={second - first}"
     finally:
         bring_down()
 

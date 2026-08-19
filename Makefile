@@ -15,12 +15,13 @@ endif
 # would have said why. Bounded, it exits nonzero and ``make logs`` still works.
 WAIT_TIMEOUT := 300
 
-.PHONY: help setup test lint fmt up up-quickstart down clean ps logs config
+.PHONY: help setup test lint fmt check up up-quickstart down clean ps logs config
 
 help:
 	@echo "setup           create .venv and install dev dependencies"
 	@echo "test            run the test suite"
-	@echo "lint            ruff + mypy"
+	@echo "lint            formatting, ruff and mypy, changing nothing"
+	@echo "check           everything the gate requires: lint then test"
 	@echo "up              start the full spine (all services)"
 	@echo "up-quickstart   start the 4 GB / 2 CPU reviewer profile"
 	@echo "down            stop and remove containers, KEEP volumes"
@@ -34,13 +35,19 @@ setup:
 test:
 	$(PY) -m pytest
 
+# --check, not a reformat: a gate that fixes what it finds cannot fail, and a target that
+# silently rewrites files is the wrong thing to run in CI. ``make fmt`` is the one that writes.
 lint:
+	$(PY) -m ruff format --check .
 	$(PY) -m ruff check .
 	$(PY) -m mypy
 
 fmt:
 	$(PY) -m ruff format .
 	$(PY) -m ruff check --fix .
+
+# What CI runs, and the one target to run before pushing.
+check: lint test
 
 up:
 	$(COMPOSE) --profile full up -d --wait --wait-timeout $(WAIT_TIMEOUT)

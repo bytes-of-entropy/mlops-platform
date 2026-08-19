@@ -30,7 +30,8 @@ switch ($Target) {
     'help' {
         Write-Output 'setup           create .venv and install dev dependencies'
         Write-Output 'test            run the test suite'
-        Write-Output 'lint            ruff + mypy'
+        Write-Output 'lint            formatting, ruff and mypy, changing nothing'
+        Write-Output 'check           everything the gate requires: lint then test'
         Write-Output 'up              start the full spine (all services)'
         Write-Output 'up-quickstart   start the 4 GB / 2 CPU reviewer profile'
         Write-Output 'down            stop and remove containers, KEEP volumes'
@@ -43,8 +44,15 @@ switch ($Target) {
     }
     'test' { Invoke-Checked $Py @('-m', 'pytest') }
     'lint' {
+        Invoke-Checked $Py @('-m', 'ruff', 'format', '--check', '.')
         Invoke-Checked $Py @('-m', 'ruff', 'check', '.')
         Invoke-Checked $Py @('-m', 'mypy')
+    }
+    'check' {
+        Invoke-Checked $Py @('-m', 'ruff', 'format', '--check', '.')
+        Invoke-Checked $Py @('-m', 'ruff', 'check', '.')
+        Invoke-Checked $Py @('-m', 'mypy')
+        Invoke-Checked $Py @('-m', 'pytest')
     }
     'fmt' {
         Invoke-Checked $Py @('-m', 'ruff', 'format', '.')

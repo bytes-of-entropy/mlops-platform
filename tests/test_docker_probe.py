@@ -36,6 +36,6 @@ def test_a_binary_whose_daemon_does_not_answer_means_stopped(probe: int | None) 
 
 
 def test_each_unusable_state_says_something_different_to_do_about_it() -> None:
-    """"Install Docker" and "start Docker" are different instructions."""
+    """ "Install Docker" and "start Docker" are different instructions."""
     assert set(SKIP_REASONS) == {DOCKER_ABSENT, DOCKER_STOPPED}
     assert SKIP_REASONS[DOCKER_ABSENT] != SKIP_REASONS[DOCKER_STOPPED]

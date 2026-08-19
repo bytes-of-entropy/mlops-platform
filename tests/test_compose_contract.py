@@ -43,9 +43,9 @@ def test_dependencies_wait_for_health_not_start(services: dict[str, dict[str, An
                 f"{name} depends on {dependency} by list form, which waits for container "
                 "start rather than readiness"
             )
-            assert spec.get("condition") == "service_healthy", (
-                f"{name} -> {dependency} does not wait for health"
-            )
+            assert (
+                spec.get("condition") == "service_healthy"
+            ), f"{name} -> {dependency} does not wait for health"
 
 
 def test_stateful_services_use_named_volumes(
@@ -71,12 +71,12 @@ def test_no_credential_is_a_literal(services: dict[str, dict[str, Any]]) -> None
         for key, value in (service.get("environment") or {}).items():
             if not CREDENTIAL_KEY.search(key):
                 continue
-            assert isinstance(value, str) and INTERPOLATED.match(value), (
-                f"{name}.{key} is not a bare interpolation: {value!r}"
-            )
-            assert ":-" not in value, (
-                f"{name}.{key} has a default value, which is a committed credential"
-            )
+            assert isinstance(value, str) and INTERPOLATED.match(
+                value
+            ), f"{name}.{key} is not a bare interpolation: {value!r}"
+            assert (
+                ":-" not in value
+            ), f"{name}.{key} has a default value, which is a committed credential"
 
 
 def test_host_bind_mounts_are_read_only(services: dict[str, dict[str, Any]]) -> None:
@@ -92,18 +92,18 @@ def test_host_bind_mounts_are_read_only(services: dict[str, dict[str, Any]]) -> 
 
 def test_restart_policy_declared(services: dict[str, dict[str, Any]]) -> None:
     for name, service in services.items():
-        assert service.get("restart") == "unless-stopped", (
-            f"{name} has no restart policy, so a crash looks like a config error"
-        )
+        assert (
+            service.get("restart") == "unless-stopped"
+        ), f"{name} has no restart policy, so a crash looks like a config error"
 
 
 @pytest.mark.parametrize("name", ["spark-worker-2", "airflow"])
 def test_heavy_services_are_behind_the_full_profile(
     services: dict[str, dict[str, Any]], name: str
 ) -> None:
-    assert services[name].get("profiles") == [FULL_PROFILE], (
-        f"{name} must be profile-gated or the quickstart envelope cannot hold"
-    )
+    assert services[name].get("profiles") == [
+        FULL_PROFILE
+    ], f"{name} must be profile-gated or the quickstart envelope cannot hold"
 
 
 def test_no_literal_secret_anywhere_in_the_file() -> None:
