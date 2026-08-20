@@ -1,8 +1,14 @@
 # Canonical entrypoint. CI runs these targets; make.ps1 mirrors them on Windows and a
 # test asserts the two do not drift.
 
-COMPOSE      := docker compose -f compose/docker-compose.yml
-COMPOSE_QS   := docker compose -f compose/docker-compose.yml -f compose/docker-compose.quickstart.yml
+# --project-directory is not decoration. Without it, compose takes the project directory from
+# the directory of the first -f file, which is compose/ -- so the default .env lookup becomes
+# compose/.env and every relative bind mount resolves under compose/ too. The .env then goes
+# unread while sitting in plain sight, and ./postgres/init resolves to a path that does not
+# exist, which Docker creates as an empty directory rather than refusing. Anchoring the project
+# directory at the repository root is what makes both paths mean what they read as.
+COMPOSE      := docker compose --project-directory . -f compose/docker-compose.yml
+COMPOSE_QS   := docker compose --project-directory . -f compose/docker-compose.yml -f compose/docker-compose.quickstart.yml
 PY           := .venv/bin/python
 BOOTSTRAP_PY := python3
 ifeq ($(OS),Windows_NT)

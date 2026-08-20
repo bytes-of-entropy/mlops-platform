@@ -14,9 +14,13 @@ import pytest
 
 from tests.conftest import REPO_ROOT, requires_docker
 
+# --project-directory, exactly as both entrypoints pass it: an integration suite that resolved
+# .env and the bind mounts differently from `make up` would be testing a stack nobody runs.
 COMPOSE = [
     "docker",
     "compose",
+    "--project-directory",
+    ".",
     "-f",
     "compose/docker-compose.yml",
     "-f",

@@ -58,6 +58,8 @@ The contract suite runs with no container runtime installed, which is what makes
 | A pinned tool is the same version everywhere it is named | `test_every_hook_that_mirrors_a_pinned_tool_runs_the_pinned_version`, `test_the_interpreter_running_this_suite_has_the_pinned_ruff` |
 | The committed hook config is something that actually runs | `test_both_entrypoints_install_the_git_hooks_during_setup`, `test_the_gate_runs_the_hooks_in_both_entrypoints_and_in_ci` |
 | `down` keeps volumes and only `clean` removes them | `test_down_keeps_volumes_and_clean_removes_them` |
+| Both entrypoints and the integration suite resolve `.env` and bind mounts against the repository root | `test_the_makefile_anchors_the_project_directory_in_every_invocation`, `test_the_powershell_mirror_anchors_it_too`, `test_the_integration_suite_invokes_compose_the_way_the_entrypoints_do` |
+| Every relative bind mount names a path that exists, and one that `compose/` cannot also satisfy | `test_every_relative_bind_mount_exists_under_the_repository_root`, `test_no_relative_bind_mount_would_also_resolve_under_the_compose_directory` |
 | `down` then `up` reaches the same healthy set, twice, with state intact | `tests/test_idempotency.py` (needs a runtime) |
 
 ## The hard problem
@@ -77,6 +79,15 @@ Three specific ways it fails are designed out here rather than discovered later:
 - **`down --volumes` makes idempotency indistinguishable from starting over.** It "works" by
   destroying the evidence. `make down` keeps volumes and `make clean` removes them, and a test fails
   if the two are ever collapsed into one.
+
+One was not designed out — it was found by reading, before the first `up` on any machine. Compose
+resolves the default `.env` and every relative bind mount against the project directory, which
+defaults to the folder holding the first `-f` file rather than the working directory, so
+`./postgres/init` pointed inside `compose/`. Docker creates a missing host path as an empty directory
+instead of refusing, which means Postgres would have started, reported healthy, and never run its
+init SQL — a failure the entire M0 gate would have passed over in silence. Every invocation now
+passes `--project-directory .`, and the reasoning is in
+[`docs/decisions/004`](docs/decisions/004-anchor-the-compose-project-directory.md).
 
 Whether the cycle actually holds is a separate question from whether it is designed to, and it is
 answered by `tests/test_idempotency.py` — which brings the stack up, tears it down, brings it up

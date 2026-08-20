@@ -10,8 +10,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$Compose = @('compose', '-f', 'compose/docker-compose.yml')
-$ComposeQs = @('compose', '-f', 'compose/docker-compose.yml', '-f', 'compose/docker-compose.quickstart.yml')
+# --project-directory anchors both the .env lookup and every relative bind mount at the
+# repository root. See the Makefile for what happens without it; a test asserts both
+# entrypoints and the integration suite pass it.
+$Compose = @('compose', '--project-directory', '.', '-f', 'compose/docker-compose.yml')
+$ComposeQs = @('compose', '--project-directory', '.', '-f', 'compose/docker-compose.yml', '-f', 'compose/docker-compose.quickstart.yml')
 $Py = '.venv/Scripts/python.exe'
 $BootstrapPy = 'py'
 # Kept in step with WAIT_TIMEOUT in the Makefile; a test fails if the two diverge.
