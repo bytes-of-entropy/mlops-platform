@@ -49,6 +49,8 @@ The contract suite runs with no container runtime installed, which is what makes
 | Claim | Asserted by |
 |---|---|
 | Every image is pinned to an exact tag | `test_every_image_is_pinned` |
+| No image comes from a namespace published as a frozen archive | `test_no_image_comes_from_an_archived_namespace` |
+| Every pinned image still resolves in a registry | `test_every_pinned_image_still_resolves` (needs a runtime) |
 | Every service has a healthcheck, and dependencies wait for health rather than start | `test_every_service_declares_a_healthcheck`, `test_dependencies_wait_for_health_not_start` |
 | No credential is a literal, anywhere in the file, including `command:` strings | `test_no_credential_is_a_literal`, `test_no_literal_secret_anywhere_in_the_file` |
 | All state lives in named volumes; host mounts are read-only | `test_stateful_services_use_named_volumes`, `test_host_bind_mounts_are_read_only` |
@@ -88,6 +90,19 @@ instead of refusing, which means Postgres would have started, reported healthy, 
 init SQL — a failure the entire M0 gate would have passed over in silence. Every invocation now
 passes `--project-directory .`, and the reasoning is in
 [`docs/decisions/004`](docs/decisions/004-anchor-the-compose-project-directory.md).
+
+The next one came from outside the repository entirely. The first `up` on the build machine failed
+with `failed to resolve reference "docker.io/bitnami/spark:3.5.1": not found` — an exact pin, on an
+unchanged file, that no longer resolved because its publisher had deleted the whole namespace and
+moved versioned tags to an explicitly unmaintained archive. The pin had done its job: it made the
+build reproducible. It had never been able to make the image *available*, and a digest pin would have
+died with the repository just the same, because a digest names content inside a repository and the
+repository is what was withdrawn. Reproducibility and availability are separate properties needing
+separate defences, and the only defence against withdrawal is a different publisher or a registry you
+control. Spark now runs on the ASF's own `apache/spark:3.5.1-python3`, two tests were added — one
+refusing any archived namespace, one asking a registry whether every pin still resolves — and the
+reasoning, including why the frozen copy of the working tag was the wrong fix, is in
+[`docs/decisions/005`](docs/decisions/005-migrate-off-the-withdrawn-spark-image.md).
 
 Whether the cycle actually holds is a separate question from whether it is designed to, and it is
 answered by `tests/test_idempotency.py` — which brings the stack up, tears it down, brings it up
