@@ -11,7 +11,10 @@ and not in the output of the command that started it.
 
 from __future__ import annotations
 
-from tests.conftest import MAX_REPORT_LINES, describe_process
+import ast
+from pathlib import Path
+
+from tests.conftest import MAX_REPORT_LINES, REPO_ROOT, describe_process
 
 ARGV = ["docker", "compose", "up", "-d", "--wait"]
 
@@ -90,3 +93,23 @@ def test_gathered_sections_keep_the_order_the_caller_gave_them() -> None:
         "compose up", ARGV, 1, "", "", {"compose ps": "state here", "service logs": "log here"}
     )
     assert report.index("compose ps") < report.index("service logs")
+
+
+def test_no_integration_assertion_reads_a_stream_without_the_report() -> None:
+    """The report is worth only as much as its call sites.
+
+    A helper fixed everywhere except the two functions that start and stop the stack leaves
+    the one failure that matters reporting stderr alone -- which is the original bug, still
+    present, behind eleven passing tests. So the constraint is on the module, not the helper:
+    the integration tier may not assert on a return code itself.
+    """
+    source = Path(REPO_ROOT, "tests", "test_idempotency.py").read_text(encoding="utf-8")
+    offenders = [
+        node.lineno
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Assert) and "returncode" in ast.dump(node.test)
+    ]
+    assert not offenders, (
+        "tests/test_idempotency.py asserts on a return code directly at line(s) "
+        f"{offenders}; route it through succeeded() so the failure reports itself"
+    )

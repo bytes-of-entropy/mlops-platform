@@ -99,14 +99,16 @@ def healthy_services() -> set[str]:
 
 
 def bring_up() -> set[str]:
-    result = run([*COMPOSE, "up", "-d", "--wait"])
-    assert result.returncode == 0, f"compose up failed:\n{result.stderr}"
+    argv = [*COMPOSE, "up", "-d", "--wait"]
+    result = run(argv)
+    succeeded("compose up", argv, result)
     return healthy_services()
 
 
 def bring_down() -> None:
-    result = run([*COMPOSE, "down", "--remove-orphans"])
-    assert result.returncode == 0, f"compose down failed:\n{result.stderr}"
+    argv = [*COMPOSE, "down", "--remove-orphans"]
+    result = run(argv)
+    succeeded("compose down", argv, result)
 
 
 def test_down_then_up_reaches_the_same_healthy_set() -> None:
