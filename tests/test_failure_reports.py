@@ -1,0 +1,55 @@
+"""What an integration failure says about itself.
+
+The integration tier runs on one machine and is read on another, so its assertion text is
+the entire diagnosis. `compose up failed:` followed by nothing is a true statement and a
+useless one -- it was produced by reading only stderr, which Docker Compose does not
+reliably use. These tests hold the report to naming the command, the exit code, and both
+streams, including when a stream is empty.
+"""
+
+from __future__ import annotations
+
+from tests.conftest import MAX_REPORT_LINES, describe_process
+
+ARGV = ["docker", "compose", "up", "-d", "--wait"]
+
+
+def test_the_report_names_the_command_that_failed() -> None:
+    report = describe_process("compose up", ARGV, 1, "", "boom")
+    assert "docker compose up -d --wait" in report
+
+
+def test_the_report_gives_the_exit_code() -> None:
+    """125 and 1 mean different things, and neither is visible in the streams."""
+    assert "exit code 125" in describe_process("compose up", ARGV, 125, "", "boom")
+
+
+def test_an_empty_stream_says_so_rather_than_printing_nothing() -> None:
+    """The bug this file exists for: silence that reads as "no output was captured"."""
+    report = describe_process("compose up", ARGV, 1, "", "")
+    assert "stderr: empty" in report
+    assert "stdout: empty" in report
+
+
+def test_both_streams_are_reported_because_compose_uses_both() -> None:
+    report = describe_process("compose up", ARGV, 1, "on stdout", "on stderr")
+    assert "on stdout" in report
+    assert "on stderr" in report
+
+
+def test_a_long_stream_keeps_its_tail_where_the_error_is() -> None:
+    lines = [f"line {index}" for index in range(MAX_REPORT_LINES + 10)]
+    report = describe_process("compose up", ARGV, 1, "", "\n".join(lines))
+    assert lines[-1] in report
+    assert lines[0] not in report
+
+
+def test_a_truncated_stream_admits_how_much_it_dropped() -> None:
+    """Silent truncation reads as complete output, which is the same failure one level up."""
+    total = MAX_REPORT_LINES + 10
+    report = describe_process("compose up", ARGV, 1, "", "\n".join(["x"] * total))
+    assert f"last {MAX_REPORT_LINES} of {total}" in report
+
+
+def test_a_short_stream_is_not_labelled_as_truncated() -> None:
+    assert "last" not in describe_process("compose up", ARGV, 1, "", "one line")

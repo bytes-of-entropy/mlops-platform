@@ -85,6 +85,15 @@ I expect three counts on the build machine, depending on where it is in the runb
 
 The middle row is the one this record exists for. It was three failures before this change.
 
+## What the counts are now
+
+The three rows above are the counts at this commit. A later fix in this repository -- the
+integration tier's failure report, which reads both output streams instead of stderr alone -- adds
+seven contract-tier items, so the same three states now read 61 / 8, 66 / 3 and 69 / 0. The rows
+are left as they were measured rather than edited to match, because a prediction quietly rewritten
+after the fact is not a prediction. The current numbers live in the README and the build-machine
+runbook, which are the documents that are supposed to move.
+
 ## Deciding evidence
 
 Measured here: **54 passed, 8 skipped**, matching the prediction, with the eight skips still

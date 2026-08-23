@@ -13,7 +13,12 @@ import subprocess
 
 import pytest
 
-from tests.conftest import REPO_ROOT, requires_docker, requires_local_credentials
+from tests.conftest import (
+    REPO_ROOT,
+    describe_process,
+    requires_docker,
+    requires_local_credentials,
+)
 
 # --project-directory, exactly as both entrypoints pass it: an integration suite that resolved
 # .env and the bind mounts differently from `make up` would be testing a stack nobody runs.
@@ -44,9 +49,17 @@ def run(argv: list[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
+def succeeded(label: str, argv: list[str], result: subprocess.CompletedProcess[str]) -> None:
+    """Assert the call worked, and if it did not, say everything about how it failed."""
+    assert result.returncode == 0, describe_process(
+        label, argv, result.returncode, result.stdout, result.stderr
+    )
+
+
 def healthy_services() -> set[str]:
-    result = run([*COMPOSE, "ps", "--format", "json"])
-    assert result.returncode == 0, result.stderr
+    argv = [*COMPOSE, "ps", "--format", "json"]
+    result = run(argv)
+    succeeded("compose ps", argv, result)
     states: set[str] = set()
     for line in result.stdout.splitlines():
         if not line.strip():
@@ -96,35 +109,32 @@ def test_state_survives_down_and_up() -> None:
     """`make down` keeps volumes, so an object written before it is readable after it."""
     bring_up()
     try:
-        written = run(
-            [
-                *COMPOSE,
-                "exec",
-                "-T",
-                "minio",
-                "sh",
-                "-lc",
-                "mc alias set local http://localhost:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD"
-                " >/dev/null && mc mb --ignore-existing local/idempotency"
-                " && echo persisted | mc pipe local/idempotency/marker",
-            ]
-        )
-        assert written.returncode == 0, written.stderr
+        write_argv = [
+            *COMPOSE,
+            "exec",
+            "-T",
+            "minio",
+            "sh",
+            "-lc",
+            "mc alias set local http://localhost:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD"
+            " >/dev/null && mc mb --ignore-existing local/idempotency"
+            " && echo persisted | mc pipe local/idempotency/marker",
+        ]
+        succeeded("minio write", write_argv, run(write_argv))
         bring_down()
         bring_up()
-        read = run(
-            [
-                *COMPOSE,
-                "exec",
-                "-T",
-                "minio",
-                "sh",
-                "-lc",
-                "mc alias set local http://localhost:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD"
-                " >/dev/null && mc cat local/idempotency/marker",
-            ]
-        )
-        assert read.returncode == 0, read.stderr
+        read_argv = [
+            *COMPOSE,
+            "exec",
+            "-T",
+            "minio",
+            "sh",
+            "-lc",
+            "mc alias set local http://localhost:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD"
+            " >/dev/null && mc cat local/idempotency/marker",
+        ]
+        read = run(read_argv)
+        succeeded("minio read", read_argv, read)
         assert "persisted" in read.stdout
     finally:
         bring_down()

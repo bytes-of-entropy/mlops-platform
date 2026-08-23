@@ -162,6 +162,31 @@ MISSING_CREDENTIALS = missing_credentials(
 # The second precondition, and the one a fresh machine hits after Docker is installed but before
 # the credentials exist. Without it those tests attempt a real `up`, compose refuses on an unset
 # variable, and three idempotency failures report a broken cycle when the cycle was never run.
+
+#: Enough of a stream to diagnose from, not so much that pytest's own output becomes the problem.
+MAX_REPORT_LINES = 40
+
+
+def describe_process(label: str, argv: list[str], returncode: int, stdout: str, stderr: str) -> str:
+    """Everything needed to diagnose a failed subprocess, in the assertion itself.
+
+    An integration failure on a machine that is not this one costs a round trip to ask
+    "what did it actually say". Docker Compose splits its output unpredictably -- progress
+    and the unhealthy-container line land on stderr in some versions and stdout in others --
+    so a report that reads only stderr can be empty at exactly the moment it matters.
+    """
+    sections = [f"{label} failed with exit code {returncode}", "command: " + " ".join(argv)]
+    for name, stream in (("stderr", stderr), ("stdout", stdout)):
+        lines = stream.strip().splitlines()
+        if not lines:
+            sections.append(f"{name}: empty")
+            continue
+        kept = lines[-MAX_REPORT_LINES:]
+        header = name if len(kept) == len(lines) else f"{name} (last {len(kept)} of {len(lines)})"
+        sections.append("\n".join([f"{header}:", *kept]))
+    return "\n\n".join(sections)
+
+
 requires_local_credentials = pytest.mark.skipif(
     bool(MISSING_CREDENTIALS),
     reason=credentials_skip_reason(MISSING_CREDENTIALS),

@@ -64,6 +64,7 @@ The contract suite runs with no container runtime installed, which is what makes
 | Every relative bind mount names a path that exists, and one that `compose/` cannot also satisfy | `test_every_relative_bind_mount_exists_under_the_repository_root`, `test_no_relative_bind_mount_would_also_resolve_under_the_compose_directory` |
 | `down` then `up` reaches the same healthy set, twice, with state intact | `tests/test_idempotency.py` (needs a runtime and the local credentials) |
 | A missing precondition is named in the skip rather than reported as a failure of what it blocks | `tests/test_docker_probe.py`, `test_the_reason_names_each_missing_variable_and_what_to_do_about_it` |
+| An integration failure reports the command, the exit code and both output streams | `tests/test_failure_reports.py` |
 | Every variable the compose files interpolate is named in `.env.example`, and nothing else is | `test_every_variable_the_compose_files_interpolate_is_in_the_example`, `test_the_example_names_nothing_the_compose_files_do_not_use` |
 
 ## The hard problem
@@ -136,15 +137,15 @@ make check    # the gate: formatting, ruff, mypy, the pre-commit hooks, then the
 Current output on the authoring machine, which has no container runtime:
 
 ```
-ruff format --check .   21 files already formatted
+ruff format --check .   22 files already formatted
 ruff check .            All checks passed!
-mypy                    Success: no issues found in 11 source files
+mypy                    Success: no issues found in 12 source files
 pre-commit --all-files  8 hooks, all Passed
-pytest                  54 passed, 8 skipped in 0.32s
+pytest                  61 passed, 8 skipped in 0.32s
 ```
 
-The formatter counts twenty-one files and mypy counts eleven because they are looking at different
-things. There are eleven Python files; the formatter also reads the ten Markdown files, where it formats
+The formatter counts twenty-two files and mypy counts twelve because they are looking at different
+things. There are twelve Python files; the formatter also reads the ten Markdown files, where it formats
 `python`-fenced code blocks and leaves prose alone. A code sample in this repository's documentation is
 therefore held to the same style as the code, which is the intended behaviour rather than a side effect
 worth suppressing.
