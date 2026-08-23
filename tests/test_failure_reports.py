@@ -4,7 +4,9 @@ The integration tier runs on one machine and is read on another, so its assertio
 the entire diagnosis. `compose up failed:` followed by nothing is a true statement and a
 useless one -- it was produced by reading only stderr, which Docker Compose does not
 reliably use. These tests hold the report to naming the command, the exit code, and both
-streams, including when a stream is empty.
+streams, including when a stream is empty -- and to carrying whatever the caller gathered
+afterwards, because the reason a stack refused to come up is normally in a container's log
+and not in the output of the command that started it.
 """
 
 from __future__ import annotations
@@ -53,3 +55,38 @@ def test_a_truncated_stream_admits_how_much_it_dropped() -> None:
 
 def test_a_short_stream_is_not_labelled_as_truncated() -> None:
     assert "last" not in describe_process("compose up", ARGV, 1, "", "one line")
+
+
+def test_gathered_sections_are_carried_into_the_report() -> None:
+    """The postgres case: compose says "unhealthy", the service log says which role is missing."""
+    report = describe_process(
+        "compose up",
+        ARGV,
+        1,
+        "container mlops-platform-postgres-1 is unhealthy",
+        "",
+        {"service logs": 'FATAL:  role "someone" does not exist'},
+    )
+    assert "service logs:" in report
+    assert 'role "someone" does not exist' in report
+
+
+def test_a_gathered_section_that_came_back_empty_says_so() -> None:
+    report = describe_process("compose up", ARGV, 1, "", "", {"compose ps": ""})
+    assert "compose ps: empty" in report
+
+
+def test_a_long_gathered_section_is_truncated_like_the_streams() -> None:
+    total = MAX_REPORT_LINES + 5
+    report = describe_process(
+        "compose up", ARGV, 1, "", "", {"service logs": "\n".join(["y"] * total)}
+    )
+    assert f"service logs (last {MAX_REPORT_LINES} of {total})" in report
+
+
+def test_gathered_sections_keep_the_order_the_caller_gave_them() -> None:
+    """State first, then logs: the reader wants to know which service before reading its log."""
+    report = describe_process(
+        "compose up", ARGV, 1, "", "", {"compose ps": "state here", "service logs": "log here"}
+    )
+    assert report.index("compose ps") < report.index("service logs")

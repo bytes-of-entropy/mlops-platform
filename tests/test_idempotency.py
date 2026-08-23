@@ -33,6 +33,8 @@ COMPOSE = [
     "compose/docker-compose.quickstart.yml",
 ]
 TIMEOUT_S = 600
+#: Enough log to hold a start-up objection, short of replaying the whole boot.
+LOG_TAIL_LINES = 30
 
 pytestmark = [pytest.mark.integration, requires_docker, requires_local_credentials]
 
@@ -49,10 +51,36 @@ def run(argv: list[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
+def diagnostics() -> dict[str, str]:
+    """What the stack looked like at the moment it refused.
+
+    A failed `up --wait` almost never says why: the reason is a container that started,
+    logged its objection and went unhealthy. `role "x" does not exist` from a Postgres whose
+    volume was initialised under a different POSTGRES_USER is exactly that shape -- invisible
+    in compose's own output, unmissable in the service log.
+    """
+    gathered: dict[str, str] = {}
+    for name, argv in (
+        ("compose ps", [*COMPOSE, "ps", "--all"]),
+        ("service logs", [*COMPOSE, "logs", "--tail", str(LOG_TAIL_LINES), "--no-color"]),
+    ):
+        try:
+            probe = run(argv)
+        except (OSError, subprocess.SubprocessError) as error:  # gathering must never mask
+            gathered[name] = f"could not be gathered: {error!r}"
+            continue
+        gathered[name] = probe.stdout or probe.stderr
+    return gathered
+
+
 def succeeded(label: str, argv: list[str], result: subprocess.CompletedProcess[str]) -> None:
     """Assert the call worked, and if it did not, say everything about how it failed."""
-    assert result.returncode == 0, describe_process(
-        label, argv, result.returncode, result.stdout, result.stderr
+    if result.returncode == 0:
+        return
+    raise AssertionError(
+        describe_process(
+            label, argv, result.returncode, result.stdout, result.stderr, diagnostics()
+        )
     )
 
 

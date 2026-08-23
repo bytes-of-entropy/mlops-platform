@@ -167,23 +167,38 @@ MISSING_CREDENTIALS = missing_credentials(
 MAX_REPORT_LINES = 40
 
 
-def describe_process(label: str, argv: list[str], returncode: int, stdout: str, stderr: str) -> str:
+def _report_section(name: str, body: str) -> str:
+    """One labelled block, tail-first and honest about what it dropped."""
+    lines = body.strip().splitlines()
+    if not lines:
+        return f"{name}: empty"
+    kept = lines[-MAX_REPORT_LINES:]
+    header = name if len(kept) == len(lines) else f"{name} (last {len(kept)} of {len(lines)})"
+    return "\n".join([f"{header}:", *kept])
+
+
+def describe_process(
+    label: str,
+    argv: list[str],
+    returncode: int,
+    stdout: str,
+    stderr: str,
+    extra: Mapping[str, str] | None = None,
+) -> str:
     """Everything needed to diagnose a failed subprocess, in the assertion itself.
 
     An integration failure on a machine that is not this one costs a round trip to ask
     "what did it actually say". Docker Compose splits its output unpredictably -- progress
     and the unhealthy-container line land on stderr in some versions and stdout in others --
     so a report that reads only stderr can be empty at exactly the moment it matters.
+
+    ``extra`` carries what the caller could gather afterwards -- container state, service
+    logs -- because the cause of a failed ``up`` is usually inside a container's log rather
+    than in the output of the command that started it.
     """
     sections = [f"{label} failed with exit code {returncode}", "command: " + " ".join(argv)]
-    for name, stream in (("stderr", stderr), ("stdout", stdout)):
-        lines = stream.strip().splitlines()
-        if not lines:
-            sections.append(f"{name}: empty")
-            continue
-        kept = lines[-MAX_REPORT_LINES:]
-        header = name if len(kept) == len(lines) else f"{name} (last {len(kept)} of {len(lines)})"
-        sections.append("\n".join([f"{header}:", *kept]))
+    named = {"stderr": stderr, "stdout": stdout, **(extra or {})}
+    sections.extend(_report_section(name, body) for name, body in named.items())
     return "\n\n".join(sections)
 
 

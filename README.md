@@ -32,7 +32,9 @@ make ps
 | Airflow (full profile) | http://localhost:8082 | A managed scheduler |
 
 `make up` starts the full spine — two Spark workers and Airflow — and wants roughly 20 GB.
-`make down` stops everything and **keeps** your volumes; `make clean` removes them.
+`make down` stops everything and **keeps** your volumes; `make clean` removes them. Change a
+credential in `.env` after the first `up` and you want `make clean`: Postgres only reads those
+variables while initialising an empty volume, and the kept volume still holds the old role.
 
 **On the pinned tags.** They are exact by policy, and the first `make up` on a machine that has
 never pulled them is also the first verification that each tag exists. If one does not resolve, the
@@ -64,7 +66,7 @@ The contract suite runs with no container runtime installed, which is what makes
 | Every relative bind mount names a path that exists, and one that `compose/` cannot also satisfy | `test_every_relative_bind_mount_exists_under_the_repository_root`, `test_no_relative_bind_mount_would_also_resolve_under_the_compose_directory` |
 | `down` then `up` reaches the same healthy set, twice, with state intact | `tests/test_idempotency.py` (needs a runtime and the local credentials) |
 | A missing precondition is named in the skip rather than reported as a failure of what it blocks | `tests/test_docker_probe.py`, `test_the_reason_names_each_missing_variable_and_what_to_do_about_it` |
-| An integration failure reports the command, the exit code and both output streams | `tests/test_failure_reports.py` |
+| An integration failure reports the command, the exit code, both output streams, and the container state and service logs gathered afterwards | `tests/test_failure_reports.py` |
 | Every variable the compose files interpolate is named in `.env.example`, and nothing else is | `test_every_variable_the_compose_files_interpolate_is_in_the_example`, `test_the_example_names_nothing_the_compose_files_do_not_use` |
 
 ## The hard problem
@@ -117,6 +119,19 @@ naming the variables that are unset, read out of `.env.example` rather than rest
 [`docs/decisions/006`](docs/decisions/006-preconditions-skip-by-name.md), including why fixing the
 documented step order instead would have left a test lying about its own subject.
 
+And the one after that was hiding in the design rather than in the order. With `.env` filled in, the
+stack still refused, and the reason was not in compose's output: it was a line in the Postgres
+container's log saying the role named in `.env` does not exist. The `postgres` image reads
+`POSTGRES_USER` only while initialising an empty data directory, so the credentials in the volume are
+the ones the *first* `up` on that machine created, and `make down` keeps that volume on purpose —
+because a `down` that removed it would make idempotency indistinguishable from starting over. The
+same property, read from two sides. Re-cloning does not help either: the project name comes from the
+directory basename, so a new clone reuses the same volume. The fix for the state is `make clean`; the
+fix for the *repository* is that a failed compose call now gathers `compose ps` and the service logs
+into the assertion, because a report built from the failing command's own streams cannot contain a
+diagnosis that only ever appears in a container's log —
+[`docs/decisions/007`](docs/decisions/007-a-kept-volume-pins-the-first-runs-credentials.md).
+
 Whether the cycle actually holds is a separate question from whether it is designed to, and it is
 answered by `tests/test_idempotency.py` — which brings the stack up, tears it down, brings it up
 again, and asserts the same healthy set plus a MinIO object written before the teardown and read after
@@ -137,15 +152,15 @@ make check    # the gate: formatting, ruff, mypy, the pre-commit hooks, then the
 Current output on the authoring machine, which has no container runtime:
 
 ```
-ruff format --check .   22 files already formatted
+ruff format --check .   23 files already formatted
 ruff check .            All checks passed!
 mypy                    Success: no issues found in 12 source files
 pre-commit --all-files  8 hooks, all Passed
-pytest                  61 passed, 8 skipped in 0.32s
+pytest                  65 passed, 8 skipped in 0.32s
 ```
 
-The formatter counts twenty-two files and mypy counts twelve because they are looking at different
-things. There are twelve Python files; the formatter also reads the ten Markdown files, where it formats
+The formatter counts twenty-three files and mypy counts twelve because they are looking at different
+things. There are twelve Python files; the formatter also reads the eleven Markdown files, where it formats
 `python`-fenced code blocks and leaves prose alone. A code sample in this repository's documentation is
 therefore held to the same style as the code, which is the intended behaviour rather than a side effect
 worth suppressing.
