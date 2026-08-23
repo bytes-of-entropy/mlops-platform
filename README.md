@@ -4,9 +4,12 @@ The local-first platform the two flagship repositories deploy onto: a Spark clus
 object storage, an MLflow tracking server, a scheduler and a metadata database, all reproducible on
 one machine, and the Kubernetes and Terraform footprint they run on in the cloud.
 
-**Status: M0.** The compose spine and its contract tests are in. Images (M1), Helm charts and
-Terraform (M2) are next. Model registry, drift detection and canary rollout are deliberately
-deferred — see [`docs/decisions/001`](docs/decisions/001-defer-registry-drift-canary.md).
+**Status: M0, not closed.** The compose spine, its contract suite, a preflight that refuses a start
+which would come up healthy and wrong, and a smoke DAG that crosses the spine end to end are all in.
+None of it has run: this was authored on a machine with no container runtime, so M0 closes when the
+integration tier is green on the build machine and not before. Images (M1), Helm charts and Terraform
+(M2) are next. Model registry, drift detection and canary rollout are deliberately deferred — see
+[`docs/decisions/001`](docs/decisions/001-defer-registry-drift-canary.md).
 
 ## The decision this enables
 
@@ -19,7 +22,7 @@ environment, and its claims about itself are asserted by tests rather than descr
 Ten minutes, 4 GB of RAM, 2 CPUs, one command:
 
 ```bash
-cp .env.example .env      # then fill in the four generated values it asks for
+cp .env.example .env      # then fill in the six generated values it asks for
 make up-quickstart        # spark master + one worker, MinIO, Postgres, MLflow
 make ps
 ```
@@ -32,9 +35,20 @@ make ps
 | Airflow (full profile) | http://localhost:8082 | A managed scheduler |
 
 `make up` starts the full spine — two Spark workers and Airflow — and wants roughly 20 GB.
-`make down` stops everything and **keeps** your volumes; `make clean` removes them. Change a
-credential in `.env` after the first `up` and you want `make clean`: Postgres only reads those
-variables while initialising an empty volume, and the kept volume still holds the old role.
+`make down` stops everything and **keeps** your volumes; `make clean` removes them.
+
+Both `up` targets depend on `make doctor`, which therefore runs first and cannot be skipped. It checks
+three things and names what to do about each: that a container runtime answers, that the seven
+credential variables are present and not still the placeholder text, and that a data volume you kept
+was initialised with the credentials now in `.env`. That last one has cost more time here than the
+other two together. Postgres reads `POSTGRES_USER` and `POSTGRES_PASSWORD` only while initialising an
+empty volume, so a credential changed after the first `up` leaves the old role in place, and the stack
+refuses with a message that appears only inside a container's log. The volume now records a salted
+digest of what built it, the doctor compares that against your current values, and the answer when
+they differ is `make clean` — which destroys the volume, which is why it is your decision and not the
+doctor's. A volume that predates the fingerprint reports that it cannot tell, rather than guessing,
+and never blocks a start:
+[`docs/decisions/009`](docs/decisions/009-a-volume-records-what-it-was-built-with.md).
 
 Airflow's login is `admin` with the `AIRFLOW_ADMIN_PASSWORD` you generated. The username is pinned
 rather than chosen — [`docs/decisions/008`](docs/decisions/008-airflow-creates-the-admin-it-is-given.md)
@@ -66,7 +80,7 @@ The contract suite runs with no container runtime installed, which is what makes
 | A pinned tool is the same version everywhere it is named | `test_every_hook_that_mirrors_a_pinned_tool_runs_the_pinned_version`, `test_the_interpreter_running_this_suite_has_the_pinned_ruff` |
 | The committed hook config is something that actually runs | `test_both_entrypoints_install_the_git_hooks_during_setup`, `test_the_gate_runs_the_hooks_in_both_entrypoints_and_in_ci` |
 | `down` keeps volumes and only `clean` removes them | `test_down_keeps_volumes_and_clean_removes_them` |
-| Both entrypoints and the integration suite resolve `.env` and bind mounts against the repository root | `test_the_makefile_anchors_the_project_directory_in_every_invocation`, `test_the_powershell_mirror_anchors_it_too`, `test_the_integration_suite_invokes_compose_the_way_the_entrypoints_do` |
+| Every place that invokes compose — both entrypoints, the integration tier and the preflight — resolves `.env` and bind mounts against the repository root | `test_the_makefile_anchors_the_project_directory_in_every_invocation`, `test_the_powershell_mirror_anchors_it_too`, `test_the_integration_suite_invokes_compose_the_way_the_entrypoints_do`, `test_the_doctor_invokes_compose_the_way_the_entrypoints_do` |
 | Every relative bind mount names a path that exists, and one that `compose/` cannot also satisfy | `test_every_relative_bind_mount_exists_under_the_repository_root`, `test_no_relative_bind_mount_would_also_resolve_under_the_compose_directory` |
 | `down` then `up` reaches the same healthy set, twice, with state intact | `tests/test_idempotency.py` (needs a runtime and the local credentials) |
 | A missing precondition is named in the skip rather than reported as a failure of what it blocks | `tests/test_docker_probe.py`, `test_the_reason_names_each_missing_variable_and_what_to_do_about_it` |
@@ -74,6 +88,14 @@ The contract suite runs with no container runtime installed, which is what makes
 | Every variable the compose files interpolate is named in `.env.example`, and nothing else is | `test_every_variable_the_compose_files_interpolate_is_in_the_example`, `test_the_example_names_nothing_the_compose_files_do_not_use` |
 | A credential passed to an image that has not been told to read it is not accepted as configuration | `test_a_credential_the_image_was_never_told_to_use_is_not_configuration` |
 | The CI credential step writes exactly the variables `.env.example` declares | `test_the_ci_credential_step_writes_exactly_what_the_example_declares` |
+| Neither entrypoint can start the stack without the preflight running first | `test_both_entrypoints_run_the_doctor_before_starting_the_stack` |
+| Every variable is classified by when its image reads it, and the table covers exactly what `.env.example` declares | `test_every_variable_the_example_declares_is_classified`, `test_the_table_classifies_nothing_the_example_does_not_declare` |
+| A kept volume built with different credentials is refused, with the recovery named | `test_a_volume_built_with_a_different_password_fails_and_says_how_to_recover` |
+| The fingerprint the init script writes is the one the checker computes, holds no credential in it, and is salted per volume | `test_the_init_script_and_the_python_digest_agree`, `test_the_recorded_file_does_not_contain_the_credentials`, `test_two_initialisations_of_the_same_credentials_record_different_digests` |
+| A volume that predates the fingerprint says it cannot tell, rather than passing or failing | `test_a_volume_that_predates_the_fingerprint_reports_that_it_cannot_tell` |
+| The DAG imports nothing the pinned Airflow image does not ship | `test_the_dag_imports_nothing_the_image_does_not_ship` |
+| The DAG reads the tracking address compose sets, and has no default for it | `test_the_dag_reads_the_tracking_variable_that_compose_sets`, `test_the_dag_has_no_default_tracking_address` |
+| One DAG run reaches MLflow and the same run id lands in Postgres | `tests/test_m0_smoke.py` (needs a runtime and the local credentials) |
 
 ## The hard problem
 
@@ -138,12 +160,29 @@ into the assertion, because a report built from the failing command's own stream
 diagnosis that only ever appears in a container's log —
 [`docs/decisions/007`](docs/decisions/007-a-kept-volume-pins-the-first-runs-credentials.md).
 
-Whether the cycle actually holds is a separate question from whether it is designed to, and it is
-answered by `tests/test_idempotency.py` — which brings the stack up, tears it down, brings it up
-again, and asserts the same healthy set plus a MinIO object written before the teardown and read after
-it. That test needs a container runtime. **It has not been run yet**: this repository was authored on a
-machine without Docker installed, and the M0 gate does not pass until it is green on the build
-machine. The contract suite below it is what runs everywhere, and it is green.
+The last one was not a failure at all, which is why it was the last to be seen. Everything above
+asserts one service at a time, and a healthcheck is a service answering its own port — seven passing
+ones are seven services that are each alive, and say nothing about whether any two of them can reach
+each other. `airflow/dags/m0_smoke.py` is the smallest thing that does: one task creates an MLflow
+run, logs a param and a metric, and marks it finished, which crosses four boundaries in one artefact
+— Airflow parsing the file, Airflow executing it, MLflow accepting the writes, Postgres holding the
+row. It is asserted at the far end as well as the near one, because MLflow's own API reporting a
+finished run proves only the half that was cheap to prove; the same run id turning up as a row in
+Postgres is what proves MLflow reached its backend store rather than answering from memory until the
+next restart. It does not touch MinIO — an artefact write goes through the artifact store and needs an
+S3 client the pinned image does not ship — and stating that is the point, because a smoke test that
+overstates its reach turns an unknown into a false assurance:
+[`docs/decisions/010`](docs/decisions/010-a-smoke-dag-closes-m0.md).
+
+Whether any of it actually holds is a separate question from whether it is designed to, and it is
+answered by two files that need a container runtime: `tests/test_idempotency.py` brings the stack up,
+tears it down, brings it up again, and asserts the same healthy set plus a MinIO object written before
+the teardown and read after it; `tests/test_m0_smoke.py` runs the smoke DAG and checks both ends of
+its write path. **Neither has been run yet**: this repository was authored on a machine without Docker
+installed, and the M0 gate does not pass until both are green on the build machine. The contract suite
+below them is what runs everywhere, and it is green — including the rule that a DAG may import Airflow
+and the standard library and nothing else, because `import mlflow` in a DAG passes the formatter, the
+linter and review, and then fails at task-run time inside an image that has no install step.
 
 ## Reproduce
 
@@ -158,31 +197,38 @@ make check    # the gate: formatting, ruff, mypy, the pre-commit hooks, then the
 Current output on the authoring machine, which has no container runtime:
 
 ```
-ruff format --check .   23 files already formatted
+ruff format --check .   38 files already formatted
 ruff check .            All checks passed!
-mypy                    Success: no issues found in 12 source files
+mypy                    Success: no issues found in 23 source files
 pre-commit --all-files  8 hooks, all Passed
-pytest                  65 passed, 8 skipped in 0.32s
+pytest                  103 passed, 11 skipped in 1.77s
 ```
 
-The formatter counts twenty-three files and mypy counts twelve because they are looking at different
-things. There are twelve Python files; the formatter also reads the eleven Markdown files, where it formats
-`python`-fenced code blocks and leaves prose alone. A code sample in this repository's documentation is
-therefore held to the same style as the code, which is the intended behaviour rather than a side effect
-worth suppressing.
+The formatter counts thirty-eight files and mypy counts twenty-three because they are looking at
+different things. There are twenty-four Python files; the formatter also reads the fourteen Markdown
+files, where it formats `python`-fenced code blocks and leaves prose alone. A code sample in this
+repository's documentation is therefore held to the same style as the code, which is the intended
+behaviour rather than a side effect worth suppressing.
 
-The eight skips are the integration tier: three idempotency tests and five image-resolution checks,
-one per pinned image. Every skip names the precondition that is missing rather than the test that
-could not run, and the reasons distinguish cases a coarser check would merge — Docker not installed
-from Docker installed but not running, and either of those from a machine whose `.env` has not been
-filled in yet. "Install Docker", "start Docker" and "write your credentials" are three different
-instructions, and a probe that only checks whether the binary exists gives the wrong one.
+The one Python file mypy does not check is the DAG. It imports Airflow, which lives in a pinned image
+rather than in these dev dependencies, so a type check here would report the framework as missing
+rather than report anything about the module — and installing a scheduler in order to check a file is a
+worse trade than reading it. What can be established without the framework is established by reading:
+the suite parses the DAG with `ast` and asserts what it declares.
+
+The eleven skips are the integration tier: three idempotency tests, five image-resolution checks, one
+per pinned image, and three that need the full profile running to exercise the smoke DAG. Every skip
+names the precondition that is missing rather than the test that could not run, and the reasons
+distinguish cases a coarser check would merge — Docker not installed from Docker installed but not
+running, and either of those from a machine whose `.env` has not been filled in yet. "Install Docker",
+"start Docker" and "write your credentials" are three different instructions, and a probe that only
+checks whether the binary exists gives the wrong one.
 
 ## What I would do differently
 
 The credential handling is the weakest part. Compose's `${VAR:?message}` form fails loudly when a
-variable is missing, which is right, but it still means an eight-line `.env` to fill in by hand
-before anything starts. A generated `.env` on first `make up` would be friendlier and would make the
+variable is missing, which is right, but it still means seven variables in a `.env` to fill in by
+hand before anything starts. A generated `.env` on first `make up` would be friendlier and would make the
 quickstart genuinely one command; it would also make it easier to forget that these are credentials.
 Chose the friction.
 
