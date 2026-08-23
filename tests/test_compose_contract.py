@@ -117,3 +117,33 @@ def test_no_literal_secret_anywhere_in_the_file() -> None:
             pytest.fail(
                 f"compose/docker-compose.yml:{number} names a credential inline: {line.strip()}"
             )
+
+
+#: Credentials that some images act on only when a separate flag tells them to. A variable on
+#: the left without every flag on the right is a login that exists in the documentation and
+#: nowhere else: the value is passed, the image ignores it, and nothing in the file reads wrong.
+CONSUMPTION_FLAGS: dict[str, tuple[str, ...]] = {
+    "_AIRFLOW_WWW_USER_USERNAME": ("_AIRFLOW_DB_MIGRATE", "_AIRFLOW_WWW_USER_CREATE"),
+    "_AIRFLOW_WWW_USER_PASSWORD": ("_AIRFLOW_DB_MIGRATE", "_AIRFLOW_WWW_USER_CREATE"),
+}
+
+
+def test_a_credential_the_image_was_never_told_to_use_is_not_configuration(
+    services: dict[str, dict[str, Any]],
+) -> None:
+    """Interpolating a credential proves the file reads it, not that the image acts on it.
+
+    Both existing checks on .env.example pass in this case -- the variable is declared and
+    it is interpolated -- so the gap is one level deeper than either of them looks. What
+    fails without this rule is the login itself, on a machine nobody is watching.
+    """
+    for name, service in services.items():
+        environment = service.get("environment") or {}
+        for supplied, required in CONSUMPTION_FLAGS.items():
+            if supplied not in environment:
+                continue
+            for flag in required:
+                assert environment.get(flag) == "true", (
+                    f"{name} supplies {supplied} but leaves {flag} unset, so the image "
+                    "never acts on the value it was given"
+                )

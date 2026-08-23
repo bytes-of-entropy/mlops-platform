@@ -58,7 +58,6 @@ jobs:
             echo "POSTGRES_USER=ci$(openssl rand -hex 6)"
             echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)"
             echo "POSTGRES_DB=platform"
-            echo "AIRFLOW_ADMIN_USER=ci$(openssl rand -hex 6)"
             echo "AIRFLOW_ADMIN_PASSWORD=$(openssl rand -hex 24)"
             echo "AIRFLOW_FERNET_KEY=$(openssl rand -base64 32)"
           } >> .env

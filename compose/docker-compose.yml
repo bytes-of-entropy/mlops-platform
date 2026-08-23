@@ -187,7 +187,18 @@ services:
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/airflow
       AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:?generate one and set AIRFLOW_FERNET_KEY in .env}
-      _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_ADMIN_USER:?set AIRFLOW_ADMIN_USER in .env}
+      # The image acts on the two credentials below only when told to. Without these flags
+      # they are inert: "airflow standalone" then invents its own admin password and writes
+      # it to a file inside the container, so the documented login exists nowhere but the
+      # documentation. Migration is not optional here either -- creating a user needs a
+      # schema, and the entrypoint tolerates its own failure, so an unmigrated database
+      # turns the create into a no-op and hands the password back to standalone.
+      _AIRFLOW_DB_MIGRATE: "true"
+      _AIRFLOW_WWW_USER_CREATE: "true"
+      # Pinned rather than configurable: standalone looks for a user named exactly "admin"
+      # and creates one with a random password when it does not find one. Any other name
+      # here leaves a second account nobody can log into.
+      _AIRFLOW_WWW_USER_USERNAME: admin
       _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:?set AIRFLOW_ADMIN_PASSWORD in .env}
     ports:
       - "8082:8080"

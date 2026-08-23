@@ -13,6 +13,7 @@ depends on.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 import pytest
 
@@ -20,6 +21,7 @@ from tests.conftest import (
     COMPOSE_FILE,
     ENV_EXAMPLE_FILE,
     QUICKSTART_FILE,
+    REPO_ROOT,
     credentials_skip_reason,
     missing_credentials,
     parse_env_pairs,
@@ -94,3 +96,18 @@ def test_the_reason_names_each_missing_variable_and_what_to_do_about_it() -> Non
     assert "MINIO_ROOT_PASSWORD" in reason
     assert "POSTGRES_PASSWORD" in reason
     assert ".env.example" in reason
+
+
+def test_the_ci_credential_step_writes_exactly_what_the_example_declares() -> None:
+    """The integration job builds its own .env, so the two lists have to stay in step.
+
+    A variable added here and not there makes compose refuse to render in CI alone: green
+    on the machine that changed it, broken on the one machine nobody watches.
+    """
+    workflow = Path(REPO_ROOT, ".github", "workflows", "ci.yml").read_text(encoding="utf-8")
+    written = set(re.findall(r'echo "([A-Z0-9_]+)=', workflow))
+    declared = set(parse_env_pairs(EXAMPLE_TEXT))
+    assert declared == written, (
+        f"only in .env.example: {sorted(declared - written)}; "
+        f"only in the workflow: {sorted(written - declared)}"
+    )

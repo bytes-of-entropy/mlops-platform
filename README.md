@@ -36,6 +36,10 @@ make ps
 credential in `.env` after the first `up` and you want `make clean`: Postgres only reads those
 variables while initialising an empty volume, and the kept volume still holds the old role.
 
+Airflow's login is `admin` with the `AIRFLOW_ADMIN_PASSWORD` you generated. The username is pinned
+rather than chosen — [`docs/decisions/008`](docs/decisions/008-airflow-creates-the-admin-it-is-given.md)
+explains why a configurable one produced an account nobody could log into.
+
 **On the pinned tags.** They are exact by policy, and the first `make up` on a machine that has
 never pulled them is also the first verification that each tag exists. If one does not resolve, the
 fix is a deliberate bump with the new tag committed — not a switch to a floating tag.
@@ -68,6 +72,8 @@ The contract suite runs with no container runtime installed, which is what makes
 | A missing precondition is named in the skip rather than reported as a failure of what it blocks | `tests/test_docker_probe.py`, `test_the_reason_names_each_missing_variable_and_what_to_do_about_it` |
 | An integration failure reports the command, the exit code, both output streams, and the container state and service logs gathered afterwards | `tests/test_failure_reports.py` |
 | Every variable the compose files interpolate is named in `.env.example`, and nothing else is | `test_every_variable_the_compose_files_interpolate_is_in_the_example`, `test_the_example_names_nothing_the_compose_files_do_not_use` |
+| A credential passed to an image that has not been told to read it is not accepted as configuration | `test_a_credential_the_image_was_never_told_to_use_is_not_configuration` |
+| The CI credential step writes exactly the variables `.env.example` declares | `test_the_ci_credential_step_writes_exactly_what_the_example_declares` |
 
 ## The hard problem
 
