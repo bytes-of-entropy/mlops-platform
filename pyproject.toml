@@ -37,6 +37,10 @@ ignore = [
 [tool.mypy]
 python_version = "3.11"
 strict = true
+# Both Python trees in this repository, and deliberately not `airflow/dags/`: those modules import
+# Airflow, which lives in a pinned image rather than in these dev dependencies, so a type check here
+# would report the framework as missing rather than report anything about the DAG. What can be
+# checked without the framework is checked by reading the file -- see `tests/dagfile.py`.
 files = ["preflight", "tests"]
 
 [tool.pytest.ini_options]

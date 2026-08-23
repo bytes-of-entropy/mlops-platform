@@ -200,11 +200,20 @@ services:
       # here leaves a second account nobody can log into.
       _AIRFLOW_WWW_USER_USERNAME: admin
       _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:?set AIRFLOW_ADMIN_PASSWORD in .env}
+      # Where the DAGs write. A literal rather than an interpolated variable: it names a service
+      # on this network, so there is exactly one correct value and nothing for an operator to
+      # choose. The smoke DAG reads this name and refuses if it is unset, rather than defaulting
+      # to an address nobody configured.
+      MLFLOW_TRACKING_URI: http://mlflow:5000
     ports:
       - "8082:8080"
     volumes:
       - airflow-logs:/opt/airflow/logs
       - ./airflow/dags:/opt/airflow/dags:ro
+    # Postgres only. MLflow is where the DAGs write, not something Airflow needs in order to
+    # start, and gating start-up on it would turn a tracking server that is slow to come up into
+    # a scheduler that never does. The smoke DAG is run after `up --wait`, by which point compose
+    # has waited on every service in the profile.
     depends_on:
       postgres:
         condition: service_healthy

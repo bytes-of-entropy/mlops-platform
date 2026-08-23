@@ -15,10 +15,11 @@ content -- two places to describe the same YAML, which is one more than can stay
 | Folder | Contract (in → out) | Owns | Milestone | State |
 |---|---|---|---|---|
 | `compose/` | credentials from the environment, interpolated bare so no default can become a committed secret → seven named services with healthchecks, named volumes, declared limits, and two profiles | The local spine: Spark master and workers, MinIO, Postgres, MLflow, Airflow. Pinned tags, healthchecks, named volumes, declared limits, and the capped quickstart override. | M0 | built |
-| `tests/` | the compose files parsed as YAML data, plus both build entrypoints read as text → pass or fail, with no container runtime needed outside the integration tier | The configuration contract: pinning, health gating, credential interpolation, the quickstart envelope, Makefile/PowerShell parity, and the `down`/`up` idempotency cycle. | M0 | built |
+| `preflight/` | the environment, the runtime, and the fingerprint inside a kept volume → a pass, or a refusal naming the variable and what to do about it | The preconditions `up` depends on: a container runtime that answers, the seven credential variables present and non-placeholder, and whether a kept data volume was initialised with the credentials in the current `.env`. Not a documented step — a prerequisite, so it cannot be skipped (`docs/decisions/009`). | M0 | built |
+| `tests/` | the compose files parsed as YAML data, both build entrypoints read as text, and the smoke DAG parsed with `ast` because Airflow lives in an image → pass or fail, with no container runtime needed outside the integration tier | The configuration contract: pinning, health gating, credential interpolation, the quickstart envelope, Makefile/PowerShell parity, what a DAG is allowed to import, the `down`/`up` idempotency cycle, and the M0 crossing asserted at both ends. | M0 | built |
 | `docs/decisions/` | nothing → one record per starred milestone, committed with the code it explains | The decision records. Every starred milestone owes one, committed with the code it explains. | M0 | built |
-| `airflow/dags/` | nothing yet → DAG modules, mounted read-only so the scheduler cannot write to the checkout | Scheduler definitions, mounted read-only. Empty until a flagship has a pipeline worth scheduling. | M1 | placeholder |
-| `postgres/init/` | the first boot of an empty data volume → the Airflow database beside the platform one. Runs once and never again, which is why `make down` keeps volumes | First-boot SQL, mounted read-only. Creates the Airflow database alongside the platform one. | M0 | built |
+| `airflow/dags/` | `MLFLOW_TRACKING_URI` from the compose file → one run in MLflow and one row in Postgres, proving the spine end to end. Mounted read-only so the scheduler cannot write to the checkout | Scheduler definitions, mounted read-only. Owns smoke coverage at M0 — the M0 gate closes on something crossing the spine, not on seven healthchecks — and real pipelines when a flagship has one worth scheduling. DAGs import Airflow and the standard library only, because the image has no install step (`docs/decisions/010`). | M0 | built |
+| `postgres/init/` | the first boot of an empty data volume → the Airflow database beside the platform one, and a salted fingerprint of the credentials that built it. Runs once and never again, which is why `make down` keeps volumes | First-boot SQL, mounted read-only. Creates the Airflow database alongside the platform one and records what the volume was initialised with, so a later start can tell a kept volume from a matching one. | M0 | built |
 | `images/` | — | Multi-stage, non-root, pinned base images with an SBOM and a scan step in CI. | M1 | not started |
 | `charts/` | — | Versioned Helm charts: Deployment, Service, Ingress, probes, HPA. No serving CRD (`docs/decisions/002`). | M2 | not started |
 | `infra/` | — | Terraform for the cloud footprint, with a destroy step in the runbook. | M2 | not started |
@@ -35,6 +36,8 @@ Within a milestone, commits follow the order the components depend on each other
 
 1. `compose/` — nothing else can be tested until the spine exists.
 2. `tests/` — the contract, committed with the configuration it constrains.
-3. `docs/decisions/` — committed in the same commit as the code each record explains.
+3. `preflight/` — guards a start, so it comes after there is something to start.
+4. `airflow/dags/` — crosses the spine, so it comes after the spine is guarded.
+5. `docs/decisions/` — committed in the same commit as the code each record explains.
 
 Commit scope is the folder name: `feat(compose): …`, `test(compose): …`, `docs(decisions): …`.
