@@ -37,7 +37,7 @@ ignore = [
 [tool.mypy]
 python_version = "3.11"
 strict = true
-files = ["tests"]
+files = ["preflight", "tests"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

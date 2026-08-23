@@ -20,14 +20,16 @@ import re
 from pathlib import Path
 from typing import Any
 
+from preflight.runtime import COMPOSE as DOCTOR_ARGV
 from tests.conftest import REPO_ROOT
 from tests.test_idempotency import COMPOSE as INTEGRATION_ARGV
 
 PROJECT_DIRECTORY_FLAG = "--project-directory"
 
-#: One entry per place that builds a compose invocation. A fourth place would be a fourth
-#: opportunity to resolve paths differently from the other three, so this list is also the
-#: inventory: adding an invocation without adding it here leaves it unchecked.
+#: One entry per place that builds a compose invocation. There are four: the Makefile, its
+#: PowerShell mirror, the integration suite, and the doctor's one-shot probe -- each of them a
+#: separate opportunity to resolve paths differently from the other three, so this list is also
+#: the inventory. Adding an invocation without adding it here leaves it unchecked.
 MAKEFILE_INVOCATION = re.compile(r"^COMPOSE\w*\s*:=\s*docker compose (?P<flags>.+)$", re.MULTILINE)
 POWERSHELL_INVOCATION = re.compile(
     r"^\$Compose\w*\s*=\s*@\('compose',(?P<flags>.+)\)$", re.MULTILINE
@@ -83,6 +85,23 @@ def test_the_integration_suite_invokes_compose_the_way_the_entrypoints_do() -> N
     assert INTEGRATION_ARGV[at + 1] == ".", (
         f"the integration suite points the project directory somewhere else: "
         f"{INTEGRATION_ARGV[at + 1]!r}"
+    )
+
+
+def test_the_doctor_invokes_compose_the_way_the_entrypoints_do() -> None:
+    """The doctor reads a volume through a one-shot container, so it resolves paths too.
+
+    It borrows the Postgres service rather than naming an image and a volume of its own, which is
+    what keeps the pin and the project name in one place -- but borrowing only works if compose
+    reads the same project directory. Anchored somewhere else it would look inside a volume named
+    after compose/, find nothing, and report a fresh machine to someone holding a full one.
+    """
+    assert PROJECT_DIRECTORY_FLAG in DOCTOR_ARGV, (
+        f"the doctor drops {PROJECT_DIRECTORY_FLAG}, so it probes a volume compose would not use"
+    )
+    at = DOCTOR_ARGV.index(PROJECT_DIRECTORY_FLAG)
+    assert DOCTOR_ARGV[at + 1] == ".", (
+        f"the doctor points the project directory somewhere else: {DOCTOR_ARGV[at + 1]!r}"
     )
 
 

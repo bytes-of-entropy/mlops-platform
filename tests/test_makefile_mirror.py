@@ -124,3 +124,39 @@ def test_the_gate_runs_the_hooks_in_both_entrypoints_and_in_ci() -> None:
 
     workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     assert "pre_commit run --all-files" in workflow, "CI does not run the hooks"
+
+
+START_TARGETS = ("up", "up-quickstart")
+MAKE_PREREQUISITES = re.compile(
+    r"^(?P<target>up|up-quickstart):\s*(?P<prerequisites>.*)$", re.MULTILINE
+)
+PS_BRANCH = r"^    '{target}' \{{.*?^    \}}"
+
+
+def test_both_entrypoints_run_the_doctor_before_starting_the_stack() -> None:
+    """The preflight is only worth having where it cannot be skipped.
+
+    A `make doctor` a reviewer has to remember to run is a runbook step wearing a target's clothes,
+    and every failure this repository has shipped so far was a stack that started and was wrong
+    rather than one that refused. Both start targets have to depend on it, in both entrypoints,
+    because a reviewer on Windows uses the other file and would never see the difference.
+    """
+    makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+    found = {
+        match.group("target"): match.group("prerequisites")
+        for match in MAKE_PREREQUISITES.finditer(makefile)
+    }
+    for target in START_TARGETS:
+        assert target in found, f"the Makefile has no {target} target"
+        assert "doctor" in found[target].split(), (
+            f"make {target} does not depend on doctor, so it starts without checking: "
+            f"{found[target]!r}"
+        )
+
+    powershell = (REPO_ROOT / "make.ps1").read_text(encoding="utf-8")
+    for target in START_TARGETS:
+        branch = re.search(PS_BRANCH.format(target=target), powershell, re.MULTILINE | re.DOTALL)
+        assert branch, f"make.ps1 has no {target} branch"
+        assert "preflight" in branch.group(0), (
+            f"make.ps1's {target} starts the stack without running the doctor first"
+        )

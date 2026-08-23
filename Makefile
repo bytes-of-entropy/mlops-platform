@@ -21,7 +21,7 @@ endif
 # would have said why. Bounded, it exits nonzero and ``make logs`` still works.
 WAIT_TIMEOUT := 300
 
-.PHONY: help setup test lint fmt hooks check up up-quickstart down clean ps logs config
+.PHONY: help setup test lint fmt hooks check doctor up up-quickstart down clean ps logs config
 
 help:
 	@echo "setup           create .venv and install dev dependencies"
@@ -29,6 +29,7 @@ help:
 	@echo "lint            formatting, ruff and mypy, changing nothing"
 	@echo "hooks           run every pre-commit hook over the whole tree"
 	@echo "check           everything the gate requires: lint, hooks, test"
+	@echo "doctor          check the machine can start the stack, and say what is wrong"
 	@echo "up              start the full spine (all services)"
 	@echo "up-quickstart   start the 4 GB / 2 CPU reviewer profile"
 	@echo "down            stop and remove containers, KEEP volumes"
@@ -66,10 +67,17 @@ hooks:
 # What CI runs, and the one target to run before pushing.
 check: lint hooks test
 
-up:
+# A runbook step is a hope; a prerequisite is a guarantee. Every failure this repository has
+# shipped so far was a stack that started and was wrong -- an unread .env, an init directory
+# mounted from the wrong place, a login the image was never told to create. The doctor is that
+# knowledge as a program, and it runs before the two targets that would otherwise hide it.
+doctor:
+	$(PY) -m preflight
+
+up: doctor
 	$(COMPOSE) --profile full up -d --wait --wait-timeout $(WAIT_TIMEOUT)
 
-up-quickstart:
+up-quickstart: doctor
 	$(COMPOSE_QS) up -d --wait --wait-timeout $(WAIT_TIMEOUT)
 
 down:

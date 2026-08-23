@@ -36,6 +36,7 @@ switch ($Target) {
         Write-Output 'lint            formatting, ruff and mypy, changing nothing'
         Write-Output 'hooks           run every pre-commit hook over the whole tree'
         Write-Output 'check           everything the gate requires: lint, hooks, test'
+        Write-Output 'doctor          check the machine can start the stack, and say what is wrong'
         Write-Output 'up              start the full spine (all services)'
         Write-Output 'up-quickstart   start the 4 GB / 2 CPU reviewer profile'
         Write-Output 'down            stop and remove containers, KEEP volumes'
@@ -68,8 +69,17 @@ switch ($Target) {
         Invoke-Checked $Py @('-m', 'ruff', 'format', '.')
         Invoke-Checked $Py @('-m', 'ruff', 'check', '--fix', '.')
     }
-    'up' { Invoke-Checked 'docker' ($Compose + @('--profile', 'full', 'up', '-d', '--wait', '--wait-timeout', $WaitTimeout)) }
-    'up-quickstart' { Invoke-Checked 'docker' ($ComposeQs + @('up', '-d', '--wait', '--wait-timeout', $WaitTimeout)) }
+    # Mirrors the Makefile's prerequisite: both start targets refuse before they start
+    # something that would come up healthy and wrong. A test asserts this branch runs it.
+    'doctor' { Invoke-Checked $Py @('-m', 'preflight') }
+    'up' {
+        Invoke-Checked $Py @('-m', 'preflight')
+        Invoke-Checked 'docker' ($Compose + @('--profile', 'full', 'up', '-d', '--wait', '--wait-timeout', $WaitTimeout))
+    }
+    'up-quickstart' {
+        Invoke-Checked $Py @('-m', 'preflight')
+        Invoke-Checked 'docker' ($ComposeQs + @('up', '-d', '--wait', '--wait-timeout', $WaitTimeout))
+    }
     'down' { Invoke-Checked 'docker' ($Compose + @('--profile', 'full', 'down', '--remove-orphans')) }
     'clean' { Invoke-Checked 'docker' ($Compose + @('--profile', 'full', 'down', '--remove-orphans', '--volumes')) }
     'ps' { Invoke-Checked 'docker' ($Compose + @('--profile', 'full', 'ps')) }

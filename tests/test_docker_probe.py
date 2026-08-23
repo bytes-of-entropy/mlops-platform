@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests.conftest import (
+from preflight.runtime import (
     DOCKER_ABSENT,
     DOCKER_READY,
     DOCKER_STOPPED,

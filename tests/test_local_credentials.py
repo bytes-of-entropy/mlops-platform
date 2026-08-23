@@ -17,15 +17,8 @@ from pathlib import Path
 
 import pytest
 
-from tests.conftest import (
-    COMPOSE_FILE,
-    ENV_EXAMPLE_FILE,
-    QUICKSTART_FILE,
-    REPO_ROOT,
-    credentials_skip_reason,
-    missing_credentials,
-    parse_env_pairs,
-)
+from preflight.credentials import credentials_skip_reason, missing_credentials, parse_env_pairs
+from tests.conftest import COMPOSE_FILE, ENV_EXAMPLE_FILE, QUICKSTART_FILE, REPO_ROOT
 
 #: The three interpolation forms compose accepts all name the variable the same way.
 INTERPOLATION = re.compile(r"\$\{([A-Z0-9_]+)")
