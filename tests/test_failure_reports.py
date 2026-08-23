@@ -12,7 +12,7 @@ and not in the output of the command that started it.
 from __future__ import annotations
 
 import ast
-from pathlib import Path
+import pathlib
 
 from tests.conftest import MAX_REPORT_LINES, REPO_ROOT, describe_process
 
@@ -95,21 +95,39 @@ def test_gathered_sections_keep_the_order_the_caller_gave_them() -> None:
     assert report.index("compose ps") < report.index("service logs")
 
 
+def integration_modules() -> list[pathlib.Path]:
+    """Every file that drives a real stack: the shared plumbing plus each integration module.
+
+    Discovered rather than listed. A named list is a list someone has to remember to extend, and
+    the module they forget is the one whose failure nobody can read.
+    """
+    tests = pathlib.Path(REPO_ROOT, "tests")
+    found = [tests / "stackops.py"]
+    found.extend(
+        path
+        for path in sorted(tests.glob("test_*.py"))
+        if "pytest.mark.integration" in path.read_text(encoding="utf-8")
+    )
+    return found
+
+
 def test_no_integration_assertion_reads_a_stream_without_the_report() -> None:
     """The report is worth only as much as its call sites.
 
     A helper fixed everywhere except the two functions that start and stop the stack leaves
     the one failure that matters reporting stderr alone -- which is the original bug, still
-    present, behind eleven passing tests. So the constraint is on the module, not the helper:
-    the integration tier may not assert on a return code itself.
+    present, behind eleven passing tests. So the constraint is on the modules, not the helper:
+    nothing in the integration tier may assert on a return code itself.
     """
-    source = Path(REPO_ROOT, "tests", "test_idempotency.py").read_text(encoding="utf-8")
-    offenders = [
-        node.lineno
-        for node in ast.walk(ast.parse(source))
-        if isinstance(node, ast.Assert) and "returncode" in ast.dump(node.test)
-    ]
-    assert not offenders, (
-        "tests/test_idempotency.py asserts on a return code directly at line(s) "
-        f"{offenders}; route it through succeeded() so the failure reports itself"
-    )
+    modules = integration_modules()
+    assert len(modules) > 1, "no integration module was discovered, so this test proves nothing"
+    for path in modules:
+        offenders = [
+            node.lineno
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+            if isinstance(node, ast.Assert) and "returncode" in ast.dump(node.test)
+        ]
+        assert not offenders, (
+            f"tests/{path.name} asserts on a return code directly at line(s) "
+            f"{offenders}; route it through Stack.check() so the failure reports itself"
+        )

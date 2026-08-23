@@ -22,14 +22,15 @@ from typing import Any
 
 from preflight.runtime import COMPOSE as DOCTOR_ARGV
 from tests.conftest import REPO_ROOT
-from tests.test_idempotency import COMPOSE as INTEGRATION_ARGV
+from tests.stackops import BASE as INTEGRATION_ARGV
 
 PROJECT_DIRECTORY_FLAG = "--project-directory"
 
 #: One entry per place that builds a compose invocation. There are four: the Makefile, its
-#: PowerShell mirror, the integration suite, and the doctor's one-shot probe -- each of them a
+#: PowerShell mirror, ``tests/stackops.py``, and the doctor's one-shot probe -- each of them a
 #: separate opportunity to resolve paths differently from the other three, so this list is also
-#: the inventory. Adding an invocation without adding it here leaves it unchecked.
+#: the inventory. Adding an invocation without adding it here leaves it unchecked. The
+#: integration tier counts once because both stacks it starts are built from one base.
 MAKEFILE_INVOCATION = re.compile(r"^COMPOSE\w*\s*:=\s*docker compose (?P<flags>.+)$", re.MULTILINE)
 POWERSHELL_INVOCATION = re.compile(
     r"^\$Compose\w*\s*=\s*@\('compose',(?P<flags>.+)\)$", re.MULTILINE
@@ -78,12 +79,12 @@ def test_the_powershell_mirror_anchors_it_too() -> None:
 def test_the_integration_suite_invokes_compose_the_way_the_entrypoints_do() -> None:
     """A suite that resolved paths differently from ``make up`` would test a stack nobody runs."""
     assert PROJECT_DIRECTORY_FLAG in INTEGRATION_ARGV, (
-        f"the integration suite drops {PROJECT_DIRECTORY_FLAG}, so it would pass against a "
+        f"the integration tier drops {PROJECT_DIRECTORY_FLAG}, so it would pass against a "
         f"stack assembled differently from the one the targets start"
     )
-    at = INTEGRATION_ARGV.index(PROJECT_DIRECTORY_FLAG)
+    at = list(INTEGRATION_ARGV).index(PROJECT_DIRECTORY_FLAG)
     assert INTEGRATION_ARGV[at + 1] == ".", (
-        f"the integration suite points the project directory somewhere else: "
+        f"the integration tier points the project directory somewhere else: "
         f"{INTEGRATION_ARGV[at + 1]!r}"
     )
 

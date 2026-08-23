@@ -20,7 +20,7 @@ from typing import Any
 import pytest
 import yaml
 
-from tests.conftest import COMPOSE_FILE, requires_docker
+from tests.conftest import COMPOSE_FILE, describe_process, requires_docker
 
 #: Namespaces that still answer for some tags but are published as frozen archives. Reaching
 #: for one is how a withdrawn dependency comes back wearing a working URL -- bitnamilegacy
@@ -65,13 +65,26 @@ def test_every_pinned_image_still_resolves(image: str) -> None:
     """
     binary = shutil.which("docker")
     assert binary is not None, "requires_docker admitted this test with no docker client present"
+    argv = [binary, "manifest", "inspect", image]
     completed = subprocess.run(  # noqa: S603 -- fixed argv, resolved path, no shell
-        [binary, "manifest", "inspect", image],
+        argv,
         capture_output=True,
+        text=True,
+        encoding="utf-8",
         timeout=MANIFEST_TIMEOUT_SECONDS,
         check=False,
     )
-    assert completed.returncode == 0, (
-        f"{image} does not resolve in any configured registry, so nobody can start this "
-        f"spine: {completed.stderr.decode(errors='replace').strip()}"
-    )
+    if completed.returncode != 0:
+        raise AssertionError(
+            describe_process(
+                f"resolving {image}",
+                argv,
+                completed.returncode,
+                completed.stdout,
+                completed.stderr,
+                {
+                    "consequence": "this pin resolves in no configured registry, so nobody can "
+                    "start this spine; the fix is a deliberate bump with the new tag committed"
+                },
+            )
+        )
