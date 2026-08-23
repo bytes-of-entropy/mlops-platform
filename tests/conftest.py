@@ -3,8 +3,10 @@ whole contract suite runs on a machine with no container runtime installed."""
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +16,8 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 COMPOSE_FILE = REPO_ROOT / "compose" / "docker-compose.yml"
 QUICKSTART_FILE = REPO_ROOT / "compose" / "docker-compose.quickstart.yml"
+ENV_EXAMPLE_FILE = REPO_ROOT / ".env.example"
+ENV_FILE = REPO_ROOT / ".env"
 
 FULL_PROFILE = "full"
 
@@ -100,4 +104,65 @@ DOCKER_STATE = probe_docker()
 requires_docker = pytest.mark.skipif(
     DOCKER_STATE != DOCKER_READY,
     reason=SKIP_REASONS.get(DOCKER_STATE, f"docker is not usable here: {DOCKER_STATE}"),
+)
+
+
+def parse_env_pairs(text: str) -> dict[str, str]:
+    """Name/value pairs out of dotenv-shaped text. Comments and blank lines are neither."""
+    pairs: dict[str, str] = {}
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        name, _, value = stripped.partition("=")
+        pairs[name.strip()] = value.strip()
+    return pairs
+
+
+def missing_credentials(
+    example_text: str, env_text: str | None, environ: Mapping[str, str]
+) -> frozenset[str]:
+    """Which variables the spine would refuse to start without.
+
+    Required is read out of the example file rather than restated here, so a variable added to the
+    spine cannot be remembered in one place and forgotten in the other. Satisfied means a
+    non-empty value in ``.env`` *or* in the process environment, because compose reads both and
+    exporting the variables instead of writing them to a file is a supported choice rather than a
+    workaround -- a guard that only looked for the file would skip on a machine that was in fact
+    ready.
+    """
+    required = set(parse_env_pairs(example_text))
+    satisfied = {name for name, value in parse_env_pairs(env_text or "").items() if value}
+    satisfied |= {name for name, value in environ.items() if value.strip()}
+    return frozenset(required - satisfied)
+
+
+def credentials_skip_reason(missing: frozenset[str]) -> str:
+    """Name the variables, because "not configured" is not an instruction."""
+    return (
+        "the compose spine has no credentials to start with: "
+        + ", ".join(sorted(missing))
+        + " unset in both .env and the environment. Copy .env.example to .env and fill it in."
+    )
+
+
+def _read_text_if_present(path: Path) -> str | None:
+    try:
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+
+
+MISSING_CREDENTIALS = missing_credentials(
+    _read_text_if_present(ENV_EXAMPLE_FILE) or "",
+    _read_text_if_present(ENV_FILE),
+    os.environ,
+)
+
+# The second precondition, and the one a fresh machine hits after Docker is installed but before
+# the credentials exist. Without it those tests attempt a real `up`, compose refuses on an unset
+# variable, and three idempotency failures report a broken cycle when the cycle was never run.
+requires_local_credentials = pytest.mark.skipif(
+    bool(MISSING_CREDENTIALS),
+    reason=credentials_skip_reason(MISSING_CREDENTIALS),
 )

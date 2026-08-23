@@ -1,8 +1,9 @@
 """`make down && make up` must be repeatable, and repeatable twice.
 
-This is the integration half of the M0 gate and it needs a container runtime, so it is
-marked and skipped where there is none. The contract suite next to it covers the
-properties that make idempotency possible; this covers whether it actually holds.
+This is the integration half of the M0 gate. It needs two things the contract suite does
+not -- a container runtime and the local credentials -- and skips, naming which one is
+absent, where either is missing. The contract suite next to it covers the properties that
+make idempotency possible; this covers whether it actually holds.
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ import subprocess
 
 import pytest
 
-from tests.conftest import REPO_ROOT, requires_docker
+from tests.conftest import REPO_ROOT, requires_docker, requires_local_credentials
 
 # --project-directory, exactly as both entrypoints pass it: an integration suite that resolved
 # .env and the bind mounts differently from `make up` would be testing a stack nobody runs.
@@ -28,7 +29,7 @@ COMPOSE = [
 ]
 TIMEOUT_S = 600
 
-pytestmark = [pytest.mark.integration, requires_docker]
+pytestmark = [pytest.mark.integration, requires_docker, requires_local_credentials]
 
 
 def run(argv: list[str]) -> subprocess.CompletedProcess[str]:

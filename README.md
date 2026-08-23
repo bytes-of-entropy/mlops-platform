@@ -62,7 +62,9 @@ The contract suite runs with no container runtime installed, which is what makes
 | `down` keeps volumes and only `clean` removes them | `test_down_keeps_volumes_and_clean_removes_them` |
 | Both entrypoints and the integration suite resolve `.env` and bind mounts against the repository root | `test_the_makefile_anchors_the_project_directory_in_every_invocation`, `test_the_powershell_mirror_anchors_it_too`, `test_the_integration_suite_invokes_compose_the_way_the_entrypoints_do` |
 | Every relative bind mount names a path that exists, and one that `compose/` cannot also satisfy | `test_every_relative_bind_mount_exists_under_the_repository_root`, `test_no_relative_bind_mount_would_also_resolve_under_the_compose_directory` |
-| `down` then `up` reaches the same healthy set, twice, with state intact | `tests/test_idempotency.py` (needs a runtime) |
+| `down` then `up` reaches the same healthy set, twice, with state intact | `tests/test_idempotency.py` (needs a runtime and the local credentials) |
+| A missing precondition is named in the skip rather than reported as a failure of what it blocks | `tests/test_docker_probe.py`, `test_the_reason_names_each_missing_variable_and_what_to_do_about_it` |
+| Every variable the compose files interpolate is named in `.env.example`, and nothing else is | `test_every_variable_the_compose_files_interpolate_is_in_the_example`, `test_the_example_names_nothing_the_compose_files_do_not_use` |
 
 ## The hard problem
 
@@ -104,6 +106,16 @@ refusing any archived namespace, one asking a registry whether every pin still r
 reasoning, including why the frozen copy of the working tag was the wrong fix, is in
 [`docs/decisions/005`](docs/decisions/005-migrate-off-the-withdrawn-spark-image.md).
 
+The one after that came from the order someone did things in. Install Docker, then run the gate, and
+the three idempotency tests failed — not because the cycle is broken, but because `.env` did not
+exist yet, so compose refused to render the file and the assertion that reported it says `compose up
+failed` under a test name that claims idempotency is the thing at fault. The pattern to copy was
+already one layer down: the Docker probe exists because installed is not the same as usable, and
+credentials are the same shape one step along. Those tests now gate on both preconditions and skip
+naming the variables that are unset, read out of `.env.example` rather than restated in test code —
+[`docs/decisions/006`](docs/decisions/006-preconditions-skip-by-name.md), including why fixing the
+documented step order instead would have left a test lying about its own subject.
+
 Whether the cycle actually holds is a separate question from whether it is designed to, and it is
 answered by `tests/test_idempotency.py` — which brings the stack up, tears it down, brings it up
 again, and asserts the same healthy set plus a MinIO object written before the teardown and read after
@@ -124,22 +136,25 @@ make check    # the gate: formatting, ruff, mypy, the pre-commit hooks, then the
 Current output on the authoring machine, which has no container runtime:
 
 ```
-ruff format --check .   15 files already formatted
+ruff format --check .   21 files already formatted
 ruff check .            All checks passed!
-mypy                    Success: no issues found in 8 source files
+mypy                    Success: no issues found in 11 source files
 pre-commit --all-files  8 hooks, all Passed
-pytest                  29 passed, 3 skipped in 0.29s
+pytest                  54 passed, 8 skipped in 0.32s
 ```
 
-The formatter counts fifteen files and mypy counts eight because they are looking at different things.
-There are eight Python files; the formatter also reads the seven Markdown files, where it formats
+The formatter counts twenty-one files and mypy counts eleven because they are looking at different
+things. There are eleven Python files; the formatter also reads the ten Markdown files, where it formats
 `python`-fenced code blocks and leaves prose alone. A code sample in this repository's documentation is
 therefore held to the same style as the code, which is the intended behaviour rather than a side effect
 worth suppressing.
 
-The three skips are the integration tests, and the skip reason distinguishes Docker not being
-installed from Docker being installed but not running — because "install Docker" and "start Docker"
-are different instructions, and a probe that only checks whether the binary exists gives the wrong one.
+The eight skips are the integration tier: three idempotency tests and five image-resolution checks,
+one per pinned image. Every skip names the precondition that is missing rather than the test that
+could not run, and the reasons distinguish cases a coarser check would merge — Docker not installed
+from Docker installed but not running, and either of those from a machine whose `.env` has not been
+filled in yet. "Install Docker", "start Docker" and "write your credentials" are three different
+instructions, and a probe that only checks whether the binary exists gives the wrong one.
 
 ## What I would do differently
 
