@@ -72,12 +72,12 @@ explains why a configurable one produced an account nobody could log into.
 never pulled them is also the first verification that each tag exists. If one does not resolve, the
 fix is a deliberate bump with the new tag committed — not a switch to a floating tag.
 
-This section is the ten-minute path. [`docs/bring-up.md`](docs/bring-up.md) is the long form, for a
-machine that has never run any of it: prerequisites and the four things deliberately not installed,
-which credentials can still be changed later and which cannot, the build-before-anything-timed order
-the integration tier needs, the output each command should produce, and a troubleshooting section
-keyed by the symptom rather than by the subsystem — because the recurring lesson here is that the
-subsystem a failure names is often not the one at fault.
+This section is the ten-minute path. [`docs/setup.md`](docs/setup.md) is the long form, and the only
+other document needed: how the code arrives and where it should live, prerequisites and the five
+things deliberately not installed, which credentials can still be changed later and which cannot, the
+build-before-anything-timed order the integration tier needs, the output each command should produce,
+and a troubleshooting section keyed by the symptom rather than by the subsystem — because the
+recurring lesson here is that the subsystem a failure names is often not the one at fault.
 
 ## Architecture
 

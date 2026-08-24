@@ -1,30 +1,88 @@
-# Bring-up
+# Setup
 
-Everything needed to take this repository from a clone to a green integration tier on a machine that
-has never run it. The procedure is the same everywhere; the commands are written for PowerShell on
-Windows, because that is where it is executed, and every one of them has a `make` equivalent named
-beside it.
+The one document for this repository: from a bundle on a memory stick to a green integration tier, on
+a machine that has never run any of it. There is no companion note and nothing to read alongside this
+file. The procedure is the same everywhere; the commands are written for PowerShell on Windows,
+because that is where it is executed, and every one of them has a `make` equivalent named beside it.
 
-Read once before starting: **nothing in section 4 has ever completed anywhere.** The gate in section
-3 is measured and reproducible. The integration tier has been started by hand far enough to find two
-defects and has not yet run green end to end, which is exactly the state M0 closes out of. A failure
-there is information about the compose contract, not evidence of a bad clone — record it before
-fixing it.
+Read once before starting: **nothing in section 6 has ever completed anywhere.** The gate in section 5
+is measured and reproducible. The integration tier has been started far enough to find three defects
+and has not yet run green end to end, which is exactly the state M0 closes out of. A failure there is
+information about the compose contract, not evidence of a bad clone — record it before fixing it.
 
-1. [Prerequisites](#1-prerequisites)
-2. [Credentials](#2-credentials)
-3. [The gate](#3-the-gate)
-4. [Build and the integration tier](#4-build-and-the-integration-tier)
-5. [Expected output](#5-expected-output)
-6. [Troubleshooting by symptom](#6-troubleshooting-by-symptom)
+1. [Get the code](#1-get-the-code)
+2. [Prerequisites](#2-prerequisites)
+3. [Where this lives on the build machine](#3-where-this-lives-on-the-build-machine)
+4. [Credentials](#4-credentials)
+5. [The gate](#5-the-gate)
+6. [Build and the integration tier](#6-build-and-the-integration-tier)
+7. [Expected output](#7-expected-output)
+8. [Troubleshooting by symptom](#8-troubleshooting-by-symptom)
+9. [After the gate is green: the deferred version bumps](#9-after-the-gate-is-green-the-deferred-version-bumps)
 
-## 1. Prerequisites
+## 1. Get the code
+
+Skip this section if you already have a clone and a shell in it; start at section 2.
+
+The code travels as a git bundle — a complete history in one file, not a snapshot, so cloning from it
+reproduces every commit in order with its tags. Verify the file before trusting it, against the hash
+in the transfer folder's `INDEX.md`, which is generated from the bundles themselves:
+
+```powershell
+Get-FileHash mlops-platform.bundle -Algorithm SHA256 | Format-List
+```
+
+PowerShell prints uppercase; the comparison is case-insensitive.
+
+```powershell
+New-Item -ItemType Directory -Force "$env:USERPROFILE\Desktop\GitHub"
+Set-Location "$env:USERPROFILE\Desktop\GitHub"
+git clone <path-to>\mlops-platform.bundle mlops-platform
+Set-Location mlops-platform
+git remote remove origin        # so nothing tries to push to a file
+git rev-list --count HEAD ; git log -1 --format='%H %s' ; git tag
+```
+
+The last line should agree with `INDEX.md`'s row for this repository. If it does not, the bundle is
+older or newer than the index, and that is worth resolving before running anything.
+
+**If a clone already exists, bring it forward rather than re-cloning.** A bundle is fetched by *path*,
+so it does not matter that `origin` was removed:
+
+```powershell
+git fetch <path-to>\mlops-platform.bundle main:refs/remotes/bundle/main
+git merge --ff-only refs/remotes/bundle/main
+```
+
+A merge that is not a fast-forward means the clone has local commits: stop and report that rather than
+forcing it. Re-cloning into a new folder is the fallback, but it does **not** reset the stack's state —
+compose derives its project name from the directory basename, so a clone into a folder named
+`mlops-platform` finds the same volumes the old one used. Section 8 has that as its own entry.
+
+Anywhere but a local NTFS path is a mistake worth naming, because it fails in ways that look like a
+broken repository rather than like a wrong location:
+
+- **Not on an external or exFAT drive.** exFAT has no symlinks, weak file locking and no case
+  sensitivity. A virtual environment also hardcodes its absolute path in `pyvenv.cfg` and in every
+  `Scripts\*.exe` shim, so it does not survive a drive letter moving — repairing one is worse than
+  re-cloning. pip, mypy, ruff and pytest are all small-file workloads, several times slower over USB,
+  and a drive spinning down mid-`pytest` produces I/O errors that read like corruption.
+- **Not inside OneDrive or any synced tree.** A virtual environment is thousands of small files, the
+  `.pytest_cache` and `.mypy_cache` churn constantly, and `git gc` rewrites packs. OneDrive holds
+  handles while uploading, which surfaces as intermittent permission errors. If the Desktop is ever
+  redirected, move the repository out and leave a shortcut behind — OneDrive's "Choose folders" cannot
+  exclude a folder inside a synced Desktop.
+- **If it does land on another fixed drive:** NTFS only, a permanent letter assigned in Disk
+  Management, and `git config --global --add safe.directory F:/GitHub/mlops-platform` with forward
+  slashes.
+
+## 2. Prerequisites
 
 | Need | Version | What it is for | Check |
 | --- | --- | --- | --- |
 | Git | any current | the clone, and Git Bash, which the hooks run under | `git --version` |
 | Python | 3.11–3.12 | `pyproject.toml` declares `>=3.11,<3.13` | `py -3 -V` |
-| A container runtime | Docker Desktop with the WSL2 backend | everything in section 4 | `docker version` |
+| A container runtime | Docker Desktop with the WSL2 backend | everything in section 6 | `docker version` |
 | GNU Make | optional | unskips one Makefile-parity test; CI runs the Makefile regardless | `make --version` |
 
 Set `git config --global user.name` and `user.email` before the first commit, or the pre-commit hooks
@@ -47,12 +105,36 @@ here. The reasoning is [`decisions/005`](decisions/005-migrate-off-the-withdrawn
   which the standard library produces. A dependency added to generate one string during setup is a
   dependency to keep patched forever.
 
-### Disk and memory
+## 3. Where this lives on the build machine
 
-The quickstart profile pulls roughly 4 GB of images; the full profile is roughly 20 GB, plus one
-build. On Windows the images and volumes live in a WSL2 virtual disk whose location is a Docker
-Desktop setting — put it on a drive with room, and prefer an SSD, since every pull, build and Spark
-shuffle spill lands there. That is a host setting, not a repository one; nothing here reads it.
+Facts about one machine, recorded because they are the difference between a stack that runs and one
+that fills a system drive. Nothing in this repository reads any of them.
+
+| Drive | What belongs on it | What must not |
+| --- | --- | --- |
+| `C:` (231 GB) | OS, Git, Python, Docker's program files, the repository and its virtual environment — under 1 GB in total | Docker's disk image. The full container profile alone is roughly 20 GB of images |
+| `F:` (931 GB, SSD) | Docker's disk image, configured at `F:\docker\data` — the working drive | — |
+| `D:` (465 GB) | bulk storage and second copies | Docker's image; Spark scratch |
+| `E:` (4.5 TB, external HDD) | cold archive only: the bundles themselves | a clone, a virtual environment, Docker's image, or anything written during a run |
+
+Record what the disks actually are rather than trusting the letters, since a letter can move:
+
+```powershell
+Get-PhysicalDisk | Select-Object DeviceId, FriendlyName, MediaType, BusType,
+  @{n='SizeGB';e={[math]::Round($_.Size/1GB)}}
+Get-Partition | Where-Object { $_.DriveLetter } | Select-Object DriveLetter, DiskNumber, Size
+Get-Volume | Select-Object DriveLetter, FileSystemLabel, FileSystem,
+  @{n='FreeGB';e={[math]::Round($_.SizeRemaining/1GB)}}
+```
+
+Match `DiskNumber` to `DeviceId` to know which volume sits on which physical disk.
+
+### Docker's disk, and how to check it
+
+The quickstart profile pulls roughly 4 GB of images; the full profile is roughly 20 GB, plus one build.
+On Windows the images and volumes live in a WSL2 virtual disk whose location is a Docker Desktop
+setting — put it on a drive with room, and prefer an SSD, since every pull, build and Spark shuffle
+spill lands there.
 
 `docker info --format '{{.DockerRootDir}}'` is **not** the check — it prints `/var/lib/docker`, a path
 inside the WSL2 VM, whichever host drive backs it. Find the backing file instead:
@@ -63,14 +145,16 @@ Get-ChildItem <the configured location> -Recurse -Filter *.vhdx |
 wsl --list -v      # docker-desktop should be Running
 ```
 
-Memory is worth knowing before the full profile rather than during it. The quickstart override caps
-its services at 3.75 GiB of ceilings in total. The full profile declares about 21 GB, of which two
-Spark workers at 7g each are 14. Those are ceilings and not reservations, and nothing at M0 gives
-Spark real work, so a runtime with less than 21 GB is expected to be fine here — but it is
-over-committed, and a container killed during section 4 is that, not a broken service. Raising the
-WSL2 allocation is a `.wslconfig` change on the host.
+### Memory
 
-## 2. Credentials
+Worth knowing before the full profile rather than during it. The quickstart override caps its services
+at 3.75 GiB of ceilings in total. The full profile declares about 21 GB, of which two Spark workers at
+7g each are 14. Those are ceilings and not reservations, and nothing at M0 gives Spark real work, so a
+runtime with less than 21 GB is expected to be fine here — but it is over-committed, and a container
+killed during section 6 is that, not a broken service. Raising the WSL2 allocation is a `.wslconfig`
+change on the host.
+
+## 4. Credentials
 
 Seven variables, all of them required: the compose files interpolate every one bare, with no default,
 so a missing value is a refused start rather than a placeholder that could become a committed secret.
@@ -99,7 +183,7 @@ Copy-Item .env.example .env
 
 Both are standard library only, on the interpreter this project already has, on every platform it
 supports. They print and store nothing; nothing is saved until you paste it. There is an ordering
-wrinkle: the virtual environment those paths refer to does not exist until section 3 runs `setup`.
+wrinkle: the virtual environment those paths refer to does not exist until section 5 runs `setup`.
 Either run `./make.ps1 setup` first and come back, or substitute `py -3` — they import nothing outside
 the standard library, so any interpreter will do.
 
@@ -114,6 +198,11 @@ There is no `AIRFLOW_ADMIN_USER`. Airflow's login is `admin` with the password a
 than configurable, because the image reads a username variable of its own and a configurable one had
 produced an account nobody could log into
 ([`decisions/008`](decisions/008-airflow-creates-the-admin-it-is-given.md)).
+
+**These values are rendered in full by `./make.ps1 config`.** That output is the interpolated compose
+file, so it carries every password and the Fernet key in plaintext. It is the right thing to read while
+diagnosing and the wrong thing to paste into a file, an issue, a chat or a blog post without replacing
+each value with the name of the variable it came from.
 
 ### Which of these you can still change later, and which you cannot
 
@@ -133,7 +222,7 @@ silently drift from it. The doctor's volume check covers the Postgres three
 ([`decisions/009`](decisions/009-a-volume-records-what-it-was-built-with.md)); nothing can check the
 Fernet key, because a silent no-op leaves no trace to compare against.
 
-## 3. The gate
+## 5. The gate
 
 Everything in this section runs with no container runtime at all. Network access is needed once:
 `setup` installs pinned dependencies, and the first `hooks` run downloads the pinned hook revisions.
@@ -143,8 +232,8 @@ Everything in this section runs with no container runtime at all. Network access
 ./make.ps1 check      # make check -- lint, format, types, hooks, tests
 ```
 
-`check` is the whole gate, and green here is the precondition for section 4 being worth starting. It
-runs `ruff check`, `ruff format --check`, `mypy`, `pre-commit run --all-files` and `pytest`. Section 5
+`check` is the whole gate, and green here is the precondition for section 6 being worth starting. It
+runs `ruff check`, `ruff format --check`, `mypy`, `pre-commit run --all-files` and `pytest`. Section 7
 has the output each one should produce.
 
 `pre-commit` prints one line per hook and no summary, so there is no "8 hooks passed" line to look
@@ -153,15 +242,23 @@ for — count the lines. The eight are `end-of-file-fixer`, `trailing-whitespace
 `ruff format`.
 
 `pytest` has three legitimate outcomes here, and which one you get says what the machine has rather
-than whether anything is wrong. They are in section 5 with what separates them.
+than whether anything is wrong. They are in section 7 with what separates them.
 
-## 4. Build and the integration tier
+## 6. Build and the integration tier
 
 The integration tier starts and stops the stack itself — three idempotency tests on the quickstart
 profile, three smoke tests on the full one — and every compose call inside it has a 600-second
 timeout. So the work in this section is doing the *pulling and building* first, by hand, outside
 anything timed. Pull inside the suite and a slow network arrives as a failed assertion about
 idempotency.
+
+**Nothing else may be holding the stack's ports when the suite runs.** The tier runs under its own
+compose project name, which isolates containers, networks and volumes — but not published host ports,
+and the compose file publishes fixed ones: `8080`, `7077`, `9000`, `9001`, `5000` and `8082`. A stack
+left up from a by-hand session takes every one of them, and the tier then fails with `Bind for
+0.0.0.0:7077 failed: port is already allocated` under a test name that claims idempotency is at fault.
+This is an open defect rather than a rule of nature, and section 8 has it as its own entry. Until it is
+fixed, `down` first and prove it:
 
 ```powershell
 ./make.ps1 doctor            # the preconditions alone, starting nothing
@@ -172,6 +269,7 @@ idempotency.
 ./make.ps1 up                # the rest of the ~20 GB: second worker and Airflow
 ./make.ps1 ps
 ./make.ps1 down              # keeps volumes; the suite expects to start from stopped
+docker ps                    # must list nothing -- this is the port check, not a formality
 .venv\Scripts\python.exe -m pytest
 ```
 
@@ -197,11 +295,13 @@ docker run --rm apache/airflow:2.9.2-python3.11 python -c "import psycopg2; prin
 
 A version string means the assumption held. `ModuleNotFoundError` means Airflow needs the same
 treatment MLflow got in [`decisions/011`](decisions/011-what-is-inside-an-image-is-a-claim.md), and it
-is better to know that now than 300 seconds into the first full-profile `--wait`.
+is better to know that now than 300 seconds into the first full-profile `--wait`. Note which image the
+answer came from: the probe is only about `apache/airflow`, and the MLflow image installs
+`psycopg2-binary` itself, so a failure there would be a build failure with a `pip` line attached.
 
 ### Worth looking at once by hand
 
-Nothing here has ever been seen running, so look at it rather than trusting the exit codes.
+Nothing here has ever been seen running green, so look at it rather than trusting the exit codes.
 
 - **Spark master** at `http://localhost:8080` — one worker with 1 core and 1 GiB under the quickstart
   profile, two workers under the full one.
@@ -216,9 +316,9 @@ Nothing here has ever been seen running, so look at it rather than trusting the 
 Twenty gigabytes of images and a full set of volumes is not worth keeping between sessions.
 
 ```powershell
-./make.ps1 clean                                       # this project: containers and volumes
-docker compose -p mlops-platform-tests down --volumes   # the suite's own set
-docker volume ls                                       # nothing mlops-* should remain
+./make.ps1 clean                                        # this project: containers and volumes
+docker compose -p mlops-platform-tests down --volumes    # the suite's own set
+docker volume ls                                        # nothing mlops-* should remain
 ```
 
 **Two projects, so two cleanups.** The integration tier runs under its own compose project name,
@@ -229,7 +329,7 @@ asserting. The cost of that separation is the second line above: `make clean` ca
 belonging to a project it does not name, and the tier's `down` keeps its volumes exactly as
 `make down` does.
 
-## 5. Expected output
+## 7. Expected output
 
 Measured on the authoring machine (Python 3.12.10, no container runtime) unless the row says
 otherwise.
@@ -256,7 +356,12 @@ resolves, which needs a docker client); three idempotency tests; and three that 
 The last six need credentials as well as a runtime, which is why the middle row drops six rather than
 three.
 
-## 6. Troubleshooting by symptom
+**The best result the tier has produced so far** is `3 failed, 110 passed, 2 skipped, 3 errors in
+190.24s`, on the build machine, with every one of the six failures caused by host ports already being
+bound. It is recorded here because it is the current honest ceiling, not a target: the row above it is
+the pass condition.
+
+## 8. Troubleshooting by symptom
 
 Every entry below is either something that has actually happened here or a precondition something
 actually checks. Find the symptom; the command is the first line of each answer.
@@ -264,6 +369,24 @@ actually checks. Find the symptom; the command is the first line of each answer.
 ### `make` is not a recognised command
 
 Use `./make.ps1 <target>`. Every target is mirrored, and a test asserts the two stay in step.
+
+### `Bind for 0.0.0.0:<port> failed: port is already allocated`
+
+Something already holds one of the stack's published ports — almost always a stack left up from a
+by-hand session, since the tier's own project name isolates everything *except* host ports.
+
+```powershell
+docker ps --format '{{.Names}}\t{{.Ports}}'
+./make.ps1 down
+docker compose -p mlops-platform-tests down
+```
+
+Then re-run. This is the third defect the first tier runs found, and it is a design defect rather than
+a machine one: two compose project names that publish the same fixed host ports cannot coexist, so the
+isolation the second name bought is partial. Every failure in the first full tier run traced to it —
+including a Spark master that then crashed with `java.net.UnknownHostException: <container id>:
+Temporary failure in name resolution`, which is debris from the aborted network programming rather than
+a Spark fault: a container whose endpoint never finished being created has no name to resolve.
 
 ### The doctor refuses: `container runtime`
 
@@ -273,7 +396,7 @@ which it saw.
 
 ### The doctor refuses: `credentials`
 
-Section 2. The message names every missing or still-placeholder variable rather than the first, so one
+Section 4. The message names every missing or still-placeholder variable rather than the first, so one
 pass fills them all in.
 
 ### The doctor refuses: `postgres volume`, saying it was initialised with different credentials
@@ -359,8 +482,8 @@ unset while it is present in `.env`.
 ### Tests skip instead of running
 
 Read the skip reason: each one names its own precondition rather than saying "requires docker". The
-three-row table in section 5 says which count belongs to which machine state. Zero skipped is the pass
-condition in section 4 and only there.
+three-row table in section 7 says which count belongs to which machine state. Zero skipped is the pass
+condition in section 6 and only there.
 
 ### The suite runs, but the result looks like an older version of the code
 
@@ -411,11 +534,28 @@ not.
 
 ### `mlops-platform-tests_*` volumes are still listed after `clean`
 
-That is the second cleanup line at the end of section 4, not a leak. `make clean` cannot reach volumes
+That is the second cleanup line at the end of section 6, not a leak. `make clean` cannot reach volumes
 belonging to a project it does not name.
 
 ### A container is killed during the full profile
 
-Read it as the memory arithmetic in section 1 before reading it as a broken service. The full profile
+Read it as the memory arithmetic in section 3 before reading it as a broken service. The full profile
 declares about 21 GB of ceilings, 14 of them the two Spark workers, and those are ceilings rather than
 reservations. Raising the allocation is a `.wslconfig` change on the host, not a repository change.
+
+## 9. After the gate is green: the deferred version bumps
+
+Held back deliberately, so that a failure on a new machine cannot be confused with a failure caused by
+a bump. One tool per commit, each with `tests/test_toolchain_pins.py` extended to assert the new pin,
+and the whole gate re-run between commits.
+
+| Tool | Pinned here | Latest known |
+| --- | --- | --- |
+| mypy | 1.10.0 | 2.3.1 |
+| pytest | 8.2.2 | 9.1.1 |
+| pre-commit | 3.7.1 | 4.6.2 |
+| pre-commit-hooks (rev) | v4.6.0 | latest tag |
+
+M1 is the next milestone after that, and it is about the one image this repository builds: multi-stage,
+non-root, an SBOM and a scan step in CI. `docs/decisions/` carries the reasoning for everything above,
+one record per decision, and `COMPONENTS.md` maps every folder to what it is for.
