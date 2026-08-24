@@ -27,7 +27,7 @@ environment, and its claims about itself are asserted by tests rather than descr
 Ten minutes, 4 GB of RAM, 2 CPUs, one command:
 
 ```bash
-cp .env.example .env      # then fill in the six generated values it asks for
+cp .env.example .env      # six blanks to fill: four generated, two chosen
 make up-quickstart        # spark master + one worker, MinIO, Postgres, MLflow
 make ps
 ```
@@ -68,6 +68,13 @@ explains why a configurable one produced an account nobody could log into.
 **On the pinned tags.** They are exact by policy, and the first `make up` on a machine that has
 never pulled them is also the first verification that each tag exists. If one does not resolve, the
 fix is a deliberate bump with the new tag committed — not a switch to a floating tag.
+
+This section is the ten-minute path. [`docs/bring-up.md`](docs/bring-up.md) is the long form, for a
+machine that has never run any of it: prerequisites and the four things deliberately not installed,
+which credentials can still be changed later and which cannot, the build-before-anything-timed order
+the integration tier needs, the output each command should produce, and a troubleshooting section
+keyed by the symptom rather than by the subsystem — because the recurring lesson here is that the
+subsystem a failure names is often not the one at fault.
 
 ## Architecture
 
@@ -231,15 +238,15 @@ make check    # the gate: formatting, ruff, mypy, the pre-commit hooks, then the
 Current output on the authoring machine, which has no container runtime:
 
 ```
-ruff format --check .   39 files already formatted
+ruff format --check .   40 files already formatted
 ruff check .            All checks passed!
 mypy                    Success: no issues found in 23 source files
 pre-commit --all-files  8 hooks, all Passed
 pytest                  106 passed, 11 skipped in 1.65s
 ```
 
-The formatter counts thirty-nine files and mypy counts twenty-three because they are looking at
-different things. There are twenty-four Python files; the formatter also reads the fifteen Markdown
+The formatter counts forty files and mypy counts twenty-three because they are looking at
+different things. There are twenty-four Python files; the formatter also reads the sixteen Markdown
 files, where it formats `python`-fenced code blocks and leaves prose alone. A code sample in this
 repository's documentation is therefore held to the same style as the code, which is the intended
 behaviour rather than a side effect worth suppressing. The linter's own file count is different again
