@@ -244,7 +244,7 @@ otherwise.
 | `pytest`, runtime but no credentials | `111 passed, 6 skipped` — derived, not measured |
 | `pytest`, runtime and credentials | `117 passed, 0 skipped` — derived, not measured; the M0 pass condition |
 | `docker images mlops-platform/mlflow` | one row, tag `2.13.0`, after `build` |
-| `make doctor` | three checks — `container runtime`, `credentials`, `postgres volume` — each `OK` |
+| `make doctor` | three checks — `container runtime`, `credentials`, `postgres volume` — each `OK`, except that the volume check reports it cannot verify a volume created before the fingerprint existed |
 
 Only the first `pytest` row is measured; the other two are derived from which guard each test carries,
 because the authoring machine cannot produce them. If a run disagrees with the row it should be on,
