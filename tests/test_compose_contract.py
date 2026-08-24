@@ -11,12 +11,24 @@ from typing import Any
 
 import pytest
 
-from tests.conftest import COMPOSE_FILE, FULL_PROFILE
+from tests.conftest import COMPOSE_FILE, FULL_PROFILE, REPO_ROOT
 
 CREDENTIAL_KEY = re.compile(r"(PASSWORD|SECRET|TOKEN|KEY|ROOT_USER)$")
 INTERPOLATED = re.compile(r"^\$\{[A-Z0-9_]+(:[?-][^}]*)?\}$")
 
 STATEFUL_SERVICES = {"minio", "postgres", "airflow"}
+
+# What each pinned image is known to provide, per image rather than per guess. Only what a
+# healthcheck names is listed: this is a record of what was verified, not an inventory. `python`
+# for the two python-tagged images because an interpreter is what those images are; `wget` for
+# Spark because that image was inspected once and the finding is written on its healthcheck.
+IMAGE_PROVIDES: dict[str, frozenset[str]] = {
+    "apache/spark": frozenset({"wget"}),
+    "minio/minio": frozenset({"mc"}),
+    "postgres": frozenset({"pg_isready"}),
+    "mlops-platform/mlflow": frozenset({"python"}),
+    "apache/airflow": frozenset({"python"}),
+}
 
 
 def test_every_image_is_pinned(services: dict[str, dict[str, Any]]) -> None:
@@ -34,6 +46,78 @@ def test_every_service_declares_a_healthcheck(services: dict[str, dict[str, Any]
             f"{name} has no healthcheck, so `up --wait` returns before it is usable "
             "and the quickstart timing claim becomes a guess"
         )
+
+
+def _healthcheck_binary(test: list[str] | str) -> str:
+    """The program a healthcheck actually runs, in either of the forms compose accepts."""
+    if isinstance(test, str):
+        return test.split()[0]
+    form, *rest = test
+    assert form in {"CMD", "CMD-SHELL"}, f"unrecognised healthcheck form {form}"
+    assert rest, "a healthcheck that declares a form and no command"
+    return rest[0] if form == "CMD" else rest[0].split()[0]
+
+
+def test_a_healthcheck_only_names_a_binary_its_image_provides(
+    services: dict[str, dict[str, Any]],
+) -> None:
+    """A healthcheck is the one command in this file that has to run inside the image.
+
+    Naming a binary the image does not ship costs the whole `--wait` timeout and then reports a
+    broken service, which is the most expensive way this file can be wrong: the failure names the
+    wrong thing, so it gets read as a bug in whatever that service does rather than as a typo in
+    one line of YAML. Same shape as the DAG import rule -- a dependency that exists only in the
+    mind of whoever wrote the file.
+    """
+    for name, service in services.items():
+        image = service["image"]
+        known = next(
+            (binaries for prefix, binaries in IMAGE_PROVIDES.items() if image.startswith(prefix)),
+            None,
+        )
+        assert known is not None, (
+            f"{name} runs {image}, which no IMAGE_PROVIDES entry covers, so its healthcheck "
+            "is unchecked; add the image and what was verified to be in it"
+        )
+        binary = _healthcheck_binary(service["healthcheck"]["test"])
+        assert binary in known, (
+            f"{name} healthchecks with `{binary}`, which {image} is not known to provide "
+            f"(verified: {', '.join(sorted(known))})"
+        )
+
+
+def test_a_built_image_still_declares_a_pinned_tag_and_a_pinned_base(
+    services: dict[str, dict[str, Any]],
+) -> None:
+    """Building an image moves the pin, it does not remove it.
+
+    A service with `build` and no `image` gets a tag compose invents, which the pin check above
+    cannot see and an operator reading `ps` cannot recognise. And the reproducibility claim moves
+    from the compose file into the Dockerfile, so the `FROM` has to be pinned for the same reason
+    the `image` keys are -- otherwise the one image this repository builds is the one image it
+    cannot rebuild identically.
+    """
+    for name, service in services.items():
+        build = service.get("build")
+        if build is None:
+            continue
+        assert "image" in service, (
+            f"{name} builds without naming a tag, so its pin is compose's to invent"
+        )
+        context = build if isinstance(build, str) else build["context"]
+        dockerfile = REPO_ROOT / context / "Dockerfile"
+        assert dockerfile.is_file(), f"{name} builds from {context}, which holds no Dockerfile"
+        bases = [
+            line.split()[1]
+            for line in dockerfile.read_text(encoding="utf-8").splitlines()
+            if line.startswith("FROM ")
+        ]
+        assert bases, f"{dockerfile} declares no FROM"
+        for base in bases:
+            assert ":" in base, f"{dockerfile} builds FROM {base}, which is `latest` in disguise"
+            assert not base.endswith(":latest"), (
+                f"{dockerfile} builds FROM {base}, which is not a pin"
+            )
 
 
 def test_dependencies_wait_for_health_not_start(services: dict[str, dict[str, Any]]) -> None:

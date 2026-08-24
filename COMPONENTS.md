@@ -20,7 +20,7 @@ content -- two places to describe the same YAML, which is one more than can stay
 | `docs/decisions/` | nothing → one record per starred milestone, committed with the code it explains | The decision records. Every starred milestone owes one, committed with the code it explains. | M0 | built |
 | `airflow/dags/` | `MLFLOW_TRACKING_URI` from the compose file → one run in MLflow and one row in Postgres, proving the spine end to end. Mounted read-only so the scheduler cannot write to the checkout | Scheduler definitions, mounted read-only. Owns smoke coverage at M0 — the M0 gate closes on something crossing the spine, not on seven healthchecks — and real pipelines when a flagship has one worth scheduling. DAGs import Airflow and the standard library only, because the image has no install step (`docs/decisions/010`). | M0 | built |
 | `postgres/init/` | the first boot of an empty data volume → the Airflow database beside the platform one, and a salted fingerprint of the credentials that built it. Runs once and never again, which is why `make down` keeps volumes | First-boot SQL, mounted read-only. Creates the Airflow database alongside the platform one and records what the volume was initialised with, so a later start can tell a kept volume from a matching one. | M0 | built |
-| `images/` | — | Multi-stage, non-root, pinned base images with an SBOM and a scan step in CI. | M1 | not started |
+| `images/` | `compose/` | Images the spine builds rather than pulls. One so far, and only because MLflow's published image ships neither of the drivers its own store flags accept (`docs/decisions/011`). Every `FROM` is pinned and a contract test reads the Dockerfile to check it. Multi-stage, non-root, SBOM and a CI scan step are M1 — what exists now is the minimum that lets M0 start. | M0 | built |
 | `charts/` | — | Versioned Helm charts: Deployment, Service, Ingress, probes, HPA. No serving CRD (`docs/decisions/002`). | M2 | not started |
 | `infra/` | — | Terraform for the cloud footprint, with a destroy step in the runbook. | M2 | not started |
 
@@ -34,10 +34,11 @@ reasoning is in `docs/decisions/001`. They land after the flagships, as dated ad
 
 Within a milestone, commits follow the order the components depend on each other:
 
-1. `compose/` — nothing else can be tested until the spine exists.
-2. `tests/` — the contract, committed with the configuration it constrains.
-3. `preflight/` — guards a start, so it comes after there is something to start.
-4. `airflow/dags/` — crosses the spine, so it comes after the spine is guarded.
-5. `docs/decisions/` — committed in the same commit as the code each record explains.
+1. `images/` — the compose file names the tag it builds, so the Dockerfile comes first.
+2. `compose/` — nothing else can be tested until the spine exists.
+3. `tests/` — the contract, committed with the configuration it constrains.
+4. `preflight/` — guards a start, so it comes after there is something to start.
+5. `airflow/dags/` — crosses the spine, so it comes after the spine is guarded.
+6. `docs/decisions/` — committed in the same commit as the code each record explains.
 
 Commit scope is the folder name: `feat(compose): …`, `test(compose): …`, `docs(decisions): …`.

@@ -147,7 +147,13 @@ services:
           memory: 1g
 
   mlflow:
-    image: ghcr.io/mlflow/mlflow:v2.13.0
+    # The only built image in the spine, and it exists for two pip packages the published MLflow
+    # image does not carry. `image` is still a pinned tag rather than a bare build: the tag is what
+    # `ps` and `inspect` report, and the base image it is built from is pinned inside the Dockerfile
+    # where a contract test can read it (`docs/decisions/011`).
+    image: mlops-platform/mlflow:2.13.0
+    build:
+      context: images/mlflow
     command: >
       mlflow server
       --host 0.0.0.0
@@ -166,7 +172,11 @@ services:
       minio:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:5000/health || exit 1"]
+      # python rather than curl: this image ships an interpreter by construction and does not
+      # promise curl. A healthcheck naming a binary the image lacks never reports healthy, so it
+      # reads as a broken service rather than a broken healthcheck -- see Spark, where the same
+      # mistake was already caught once.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health').read()"]
       interval: 15s
       timeout: 5s
       retries: 10
@@ -218,7 +228,11 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health || exit 1"]
+      # python rather than curl: this is a python image by construction, so the interpreter is the
+      # one dependency it cannot be missing. Same reasoning as the Spark healthcheck above, one step
+      # further -- nothing here depends on which utilities the base image happened to include, so a
+      # base-image change cannot turn a healthy service into an unhealthy one.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health').read()"]
       interval: 15s
       timeout: 5s
       retries: 12
