@@ -23,8 +23,10 @@ from typing import Any
 from preflight.runtime import COMPOSE as DOCTOR_ARGV
 from tests.conftest import REPO_ROOT
 from tests.stackops import BASE as INTEGRATION_ARGV
+from tests.stackops import TEST_PROJECT
 
 PROJECT_DIRECTORY_FLAG = "--project-directory"
+PROJECT_NAME_FLAG = "-p"
 
 #: One entry per place that builds a compose invocation. There are four: the Makefile, its
 #: PowerShell mirror, ``tests/stackops.py``, and the doctor's one-shot probe -- each of them a
@@ -86,6 +88,31 @@ def test_the_integration_suite_invokes_compose_the_way_the_entrypoints_do() -> N
     assert INTEGRATION_ARGV[at + 1] == ".", (
         f"the integration tier points the project directory somewhere else: "
         f"{INTEGRATION_ARGV[at + 1]!r}"
+    )
+
+
+def test_the_integration_suite_starts_its_own_project_not_the_developers() -> None:
+    """Same files, same project directory, different project name -- and the name matters.
+
+    Compose names containers and volumes after the project, and the project defaults to the
+    directory basename, which is identical in every clone. Sharing it makes one stack wear two
+    names: the tier inherits whatever volume the last `make up` left behind, so a stale volume
+    decides whether the suite passes, and a `make clean` in another window deletes state a test case
+    is mid-way through asserting. Neither is a thing a test suite may do to the machine it runs on.
+    """
+    assert PROJECT_NAME_FLAG in INTEGRATION_ARGV, (
+        "the integration tier does not name a project, so it shares containers and volumes "
+        "with whatever the entrypoints started"
+    )
+    at = list(INTEGRATION_ARGV).index(PROJECT_NAME_FLAG)
+    assert INTEGRATION_ARGV[at + 1] == TEST_PROJECT
+    assert REPO_ROOT.name != TEST_PROJECT, (
+        f"the tier's project name is the default compose would have picked ({REPO_ROOT.name}), "
+        "which separates nothing"
+    )
+    assert PROJECT_NAME_FLAG not in DOCTOR_ARGV, (
+        "the doctor names a project, so it would probe the test tier's volume rather than the "
+        "one the entrypoints actually start"
     )
 
 

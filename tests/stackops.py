@@ -21,13 +21,27 @@ from dataclasses import dataclass
 
 from tests.conftest import REPO_ROOT, describe_process
 
+#: The suite's own project name. Not cosmetic: compose derives the default from the directory
+#: basename, so without this the tier's containers and volumes are the ones `make up` created -- one
+#: stack under two names, where either side's teardown lands on the other. A developer's kept
+#: volume would then decide whether the tier passes, and `make clean` in another window would delete
+#: state a running test case is mid-way through asserting. Naming a project is the only way to
+#: separate them, because re-cloning cannot: the basename is the same in every clone. The tier's
+#: `down` keeps its volumes, as `make down` does, so they outlive a run under this name; removing
+#: them is `docker compose -p mlops-platform-tests down --volumes`.
+TEST_PROJECT = "mlops-platform-tests"
+
 #: --project-directory, exactly as both entrypoints pass it. An integration suite that resolved
 #: `.env` and the bind mounts differently from `make up` would be testing a stack nobody runs.
+#: The project *name* is the one thing deliberately not shared -- it renames containers and volumes
+#: and changes nothing about how the files are read.
 BASE = (
     "docker",
     "compose",
     "--project-directory",
     ".",
+    "-p",
+    TEST_PROJECT,
     "-f",
     "compose/docker-compose.yml",
 )
@@ -105,7 +119,7 @@ class Stack:
         return states
 
     def up(self) -> set[str]:
-        self.check("compose up", "up", "-d", "--wait")
+        self.check("compose up", "up", "-d", "--build", "--wait")
         return self.healthy()
 
     def down(self) -> None:
