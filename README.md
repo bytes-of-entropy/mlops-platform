@@ -9,7 +9,10 @@ which would come up healthy and wrong, and a smoke DAG that crosses the spine en
 The stack has now been started for the first time, on the build machine, and that first start found
 two defects nothing here could have caught by reading — both of them claims about what is *inside* a
 pinned image ([`docs/decisions/011`](docs/decisions/011-what-is-inside-an-image-is-a-claim.md)). Both
-are fixed and neither is fixed by a rule that only reads the compose file. M0 closes when the
+are fixed and neither is fixed by a rule that only reads the compose file. The first run of the
+integration tier then found a third, this one in a test rather than in the stack: fixing the second had
+silently moved a supply-chain check off the pin it was there to watch
+([`docs/decisions/012`](docs/decisions/012-a-built-tag-is-not-a-registry-fact.md)). M0 closes when the
 integration tier is green end to end, which it is not yet. Hardened images (M1) — multi-stage, non-root,
 an SBOM and a scan step in CI — then Helm charts and Terraform (M2) are next; the one image built here is
 the minimum that lets M0 start, not the beginning of that work. Model registry, drift detection and
@@ -88,7 +91,8 @@ The contract suite runs with no container runtime installed, which is what makes
 |---|---|
 | Every image is pinned to an exact tag | `test_every_image_is_pinned` |
 | No image comes from a namespace published as a frozen archive | `test_no_image_comes_from_an_archived_namespace` |
-| Every pinned image still resolves in a registry | `test_every_pinned_image_still_resolves` (needs a runtime) |
+| Every pinned image still resolves in a registry — the tags this spine pulls, plus the base of the one it builds | `test_every_pinned_image_still_resolves` (needs a runtime) |
+| Every image is either pulled from a registry or built here, and none is treated as both | `test_every_service_image_is_either_pulled_or_built` |
 | Every service has a healthcheck, and dependencies wait for health rather than start | `test_every_service_declares_a_healthcheck`, `test_dependencies_wait_for_health_not_start` |
 | A healthcheck only names a binary its own image is known to provide | `test_a_healthcheck_only_names_a_binary_its_image_provides` |
 | A service that is built still declares a pinned tag, and its Dockerfile a pinned base | `test_a_built_image_still_declares_a_pinned_tag_and_a_pinned_base` |
@@ -212,13 +216,30 @@ rules make the class hard to reintroduce — a healthcheck may only name a binar
 providing, and a built service still declares a pinned tag with a pinned base behind it:
 [`docs/decisions/011`](docs/decisions/011-what-is-inside-an-image-is-a-claim.md).
 
+The one after those was mine rather than an image's, and it arrived from the only place that could
+find it: the tier itself, on the first run that reached that far. `test_every_pinned_image_still_resolves`
+asks a registry about every `image` key in the compose file, which was exactly right until the fix
+above added a service that is *built* here and — deliberately, because that is the tag `ps` reports —
+kept an `image` key beside its `build`. So the suite asked a registry about a tag this repository
+produces, got exit code 1, and reported a withdrawn pin that nobody had withdrawn. The false alarm was
+the visible half. The invisible half is worse: the pin that genuinely could be withdrawn,
+`ghcr.io/mlflow/mlflow:v2.13.0`, stopped being probed the moment that `image` key changed, and nothing
+said so. A test whose input set is derived from configuration can have its premise revoked by an edit
+to that configuration, and it will keep passing — or fail for the wrong reason — with no edit to the
+test. The module now sorts each `image` key by whether its service declares a `build` and probes the
+pulled tags plus the `FROM` of the built one, and a third test asserts the two sets account for every
+key between them, so a tag can move from one to the other but cannot fall out of both:
+[`docs/decisions/012`](docs/decisions/012-a-built-tag-is-not-a-registry-fact.md).
+
 Whether any of it actually holds is a separate question from whether it is designed to, and it is
 answered by two files that need a container runtime: `tests/test_idempotency.py` brings the stack up,
 tears it down, brings it up again, and asserts the same healthy set plus a MinIO object written before
 the teardown and read after it; `tests/test_m0_smoke.py` runs the smoke DAG and checks both ends of
-its write path. **Neither has been run green yet.** The two defects above were found by starting the
-stack by hand, which is one step short of that tier running: authoring happened on a machine with no
-container runtime, and the M0 gate does not pass until both files are green on the build machine. The
+its write path. **Neither has been run green yet.** Authoring happened on a machine with no container
+runtime, and the M0 gate does not pass until both files are green on the build machine. Two of the
+defects above were found by starting the stack by hand, one step short of that tier running; the third
+was found by the tier running and failing, which is the first thing it has ever reported and is already
+one more than reading could have produced. The
 contract suite below them is what runs everywhere, and it is green — including the rule that a DAG may
 import Airflow and the standard library and nothing else, because `import mlflow` in a DAG passes the
 formatter, the linter and review, and then fails at task-run time inside an image that has no install
@@ -238,15 +259,15 @@ make check    # the gate: formatting, ruff, mypy, the pre-commit hooks, then the
 Current output on the authoring machine, which has no container runtime:
 
 ```
-ruff format --check .   40 files already formatted
+ruff format --check .   41 files already formatted
 ruff check .            All checks passed!
 mypy                    Success: no issues found in 23 source files
 pre-commit --all-files  8 hooks, all Passed
-pytest                  106 passed, 11 skipped in 1.65s
+pytest                  107 passed, 11 skipped in 1.72s
 ```
 
-The formatter counts forty files and mypy counts twenty-three because they are looking at
-different things. There are twenty-four Python files; the formatter also reads the sixteen Markdown
+The formatter counts forty-one files and mypy counts twenty-three because they are looking at
+different things. There are twenty-four Python files; the formatter also reads the seventeen Markdown
 files, where it formats `python`-fenced code blocks and leaves prose alone. A code sample in this
 repository's documentation is therefore held to the same style as the code, which is the intended
 behaviour rather than a side effect worth suppressing. The linter's own file count is different again
@@ -259,8 +280,9 @@ rather than report anything about the module — and installing a scheduler in o
 worse trade than reading it. What can be established without the framework is established by reading:
 the suite parses the DAG with `ast` and asserts what it declares.
 
-The eleven skips are the integration tier: three idempotency tests, five image-resolution checks, one
-per pinned image, and three that need the full profile running to exercise the smoke DAG. Every skip
+The eleven skips are the integration tier: three idempotency tests, five image-resolution checks —
+one per registry reference, meaning the four tags the spine pulls plus the base the one built image
+comes from — and three that need the full profile running to exercise the smoke DAG. Every skip
 names the precondition that is missing rather than the test that could not run, and the reasons
 distinguish cases a coarser check would merge — Docker not installed from Docker installed but not
 running, and either of those from a machine whose `.env` has not been filled in yet. "Install Docker",

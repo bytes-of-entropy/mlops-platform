@@ -237,12 +237,12 @@ otherwise.
 | Command | Expected output |
 | --- | --- |
 | `ruff check .` | `All checks passed!` — 25 paths: the 24 modules plus `pyproject.toml`, read for configuration |
-| `ruff format --check .` | `40 files already formatted` — 24 Python and 16 Markdown; the formatter handles both |
+| `ruff format --check .` | `41 files already formatted` — 24 Python and 17 Markdown; the formatter handles both |
 | `mypy` | `Success: no issues found in 23 source files` |
 | `pre-commit run --all-files` | 8 lines, each `Passed`; no summary line |
-| `pytest`, no runtime | `106 passed, 11 skipped` |
-| `pytest`, runtime but no credentials | `111 passed, 6 skipped` — derived, not measured |
-| `pytest`, runtime and credentials | `117 passed, 0 skipped` — derived, not measured; the M0 pass condition |
+| `pytest`, no runtime | `107 passed, 11 skipped` |
+| `pytest`, runtime but no credentials | `112 passed, 6 skipped` — derived, not measured |
+| `pytest`, runtime and credentials | `118 passed, 0 skipped` — derived, not measured; the M0 pass condition |
 | `docker images mlops-platform/mlflow` | one row, tag `2.13.0`, after `build` |
 | `make doctor` | three checks — `container runtime`, `credentials`, `postgres volume` — each `OK`, except that the volume check reports it cannot verify a volume created before the fingerprint existed |
 
@@ -250,10 +250,11 @@ Only the first `pytest` row is measured; the other two are derived from which gu
 because the authoring machine cannot produce them. If a run disagrees with the row it should be on,
 **that disagreement is the finding** — record it before fixing it.
 
-The eleven skips divide as five image-resolution checks, one per pinned image (they ask a registry
-whether each pin still resolves, which needs a docker client); three idempotency tests; and three that
-run the smoke DAG. The last six need credentials as well as a runtime, which is why the middle row
-drops six rather than three.
+The eleven skips divide as five image-resolution checks, one per registry reference — the four tags
+the spine pulls plus the base the one built image comes from (they ask a registry whether each still
+resolves, which needs a docker client); three idempotency tests; and three that run the smoke DAG.
+The last six need credentials as well as a runtime, which is why the middle row drops six rather than
+three.
 
 ## 6. Troubleshooting by symptom
 
@@ -339,6 +340,14 @@ clone — it is the test that would have caught the Spark withdrawal that broke 
 project. The fix is a decision record and a new publisher, not a retry, and never a switch to a
 floating tag.
 
+Read the tag it names before believing that, because the module probes two different kinds of
+reference: the tags this spine pulls, and the `FROM` of the one it builds. A failure naming
+`ghcr.io/mlflow/mlflow:v2.13.0`, `apache/spark:3.5.1-python3`, `apache/airflow:2.9.2-python3.11`,
+`postgres:16.3-alpine` or `minio/minio:…` is the withdrawal case above. A failure naming
+`mlops-platform/mlflow:2.13.0` is not — no registry has heard of a tag this repository produces, so
+that is the sorting itself having regressed, and
+[`decisions/012`](decisions/012-a-built-tag-is-not-a-registry-fact.md) is the entry to read.
+
 ### `config` shows a mount resolving under `compose\`
 
 The `postgres/init` mount must resolve to an absolute path under the *repository* root. Every
@@ -363,7 +372,7 @@ git rev-list --count HEAD
 git log -1 --format='%h %s'
 ```
 
-The tree that ships this file collects 117 items. Anything else is a working tree somewhere in the
+The tree that ships this file collects 118 items. Anything else is a working tree somewhere in the
 middle, and re-running it will keep producing whatever it produced before.
 
 ### `test_the_scheduler_registers_the_dag_without_an_import_error` fails
