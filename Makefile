@@ -21,7 +21,7 @@ endif
 # would have said why. Bounded, it exits nonzero and ``make logs`` still works.
 WAIT_TIMEOUT := 300
 
-.PHONY: help setup test lint fmt hooks check doctor up up-quickstart down clean ps logs config
+.PHONY: help setup test lint fmt hooks check doctor build up up-quickstart down clean reset ps logs config
 
 help:
 	@echo "setup           create .venv and install dev dependencies"
@@ -30,10 +30,12 @@ help:
 	@echo "hooks           run every pre-commit hook over the whole tree"
 	@echo "check           everything the gate requires: lint, hooks, test"
 	@echo "doctor          check the machine can start the stack, and say what is wrong"
+	@echo "build           build the one image in the spine, without starting anything"
 	@echo "up              start the full spine (all services)"
 	@echo "up-quickstart   start the 4 GB / 2 CPU reviewer profile"
 	@echo "down            stop and remove containers, KEEP volumes"
 	@echo "clean           stop and remove containers AND volumes"
+	@echo "reset           clean, then start the full spine from nothing"
 
 setup:
 	$(BOOTSTRAP_PY) -m venv .venv
@@ -74,17 +76,28 @@ check: lint hooks test
 doctor:
 	$(PY) -m preflight
 
+# `up` builds too, so this target is not a prerequisite of anything -- it exists so a build can be
+# paid for outside a timed window. The integration tier bounds every compose call it makes, and a
+# cold build plus a cold pull is minutes of that budget spent on work that is identical every time.
+build:
+	$(COMPOSE) --profile full build
+
 up: doctor
-	$(COMPOSE) --profile full up -d --wait --wait-timeout $(WAIT_TIMEOUT)
+	$(COMPOSE) --profile full up -d --build --wait --wait-timeout $(WAIT_TIMEOUT)
 
 up-quickstart: doctor
-	$(COMPOSE_QS) up -d --wait --wait-timeout $(WAIT_TIMEOUT)
+	$(COMPOSE_QS) up -d --build --wait --wait-timeout $(WAIT_TIMEOUT)
 
 down:
 	$(COMPOSE) --profile full down --remove-orphans
 
 clean:
 	$(COMPOSE) --profile full down --remove-orphans --volumes
+
+# Two steps an operator was already running by hand, named once. Still explicitly asked for: the
+# doctor refuses a mismatched volume and says to run this, which is not the same as a start that
+# quietly destroys state to get itself going. `clean` first, so the recovery cannot half-happen.
+reset: clean up
 
 ps:
 	$(COMPOSE) --profile full ps

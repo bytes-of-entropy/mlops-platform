@@ -119,8 +119,9 @@ def check_postgres_volume(volume: VolumeState, user: str, password: str) -> Resu
             FAIL,
             "this volume was initialised with a different POSTGRES_USER or POSTGRES_PASSWORD, and "
             + READ_TIMING["POSTGRES_USER"].consequence
-            + ". Either restore the values it was created with, or run `make clean` to discard the "
-            "volume -- which also discards the MLflow runs and Airflow history inside it",
+            + ". Either restore the values it was created with, or run `make reset` to discard the "
+            "volume and start over -- which also discards the MLflow runs and Airflow history "
+            "inside it",
         )
 
     if volume.kind == VOLUME_UNFINGERPRINTED:

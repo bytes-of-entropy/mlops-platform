@@ -166,9 +166,9 @@ def test_a_volume_built_with_a_different_password_fails_and_says_how_to_recover(
     result = check_postgres_volume(state, USER, PASSWORD)
     assert result.status == FAIL
     assert "POSTGRES_PASSWORD" in result.detail
-    assert "make clean" in result.detail, "the failure does not say how to get out of it"
+    assert "make reset" in result.detail, "the failure does not say how to get out of it"
     assert "MLflow" in result.detail, (
-        "make clean discards history, and that has to be said rather than implied"
+        "the recovery discards history, and that has to be said rather than implied"
     )
 
 
