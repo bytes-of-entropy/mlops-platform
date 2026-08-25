@@ -15,6 +15,9 @@ from tests.conftest import COMPOSE_FILE, FULL_PROFILE, REPO_ROOT
 
 CREDENTIAL_KEY = re.compile(r"(PASSWORD|SECRET|TOKEN|KEY|ROOT_USER)$")
 INTERPOLATED = re.compile(r"^\$\{[A-Z0-9_]+(:[?-][^}]*)?\}$")
+#: A published port's host half: a variable named for the service, with today's number
+#: as its default. `"${MLFLOW_HOST_PORT:-5000}:5000"` matches; `"5000:5000"` does not.
+PUBLISHED_HOST_PORT = re.compile(r"^\$\{[A-Z0-9_]+:-\d+\}$")
 
 STATEFUL_SERVICES = {"minio", "postgres", "airflow"}
 
@@ -160,6 +163,33 @@ def test_no_credential_is_a_literal(services: dict[str, dict[str, Any]]) -> None
             )
             assert ":-" not in value, (
                 f"{name}.{key} has a default value, which is a committed credential"
+            )
+
+
+def test_no_published_host_port_is_a_literal(services: dict[str, dict[str, Any]]) -> None:
+    """The host half of every published port must be a variable with a default.
+
+    A literal here is what stopped the integration tier running beside a stack started by hand.
+    The project name the tier uses isolates containers, networks and volumes, and host ports are
+    not among them, so two projects publishing 7077 cannot both start and the second one to try
+    fails on a bind. The tier sets these variables to 0 and lets Docker choose; the defaults keep
+    `make up` publishing the numbers the README and the guide name. Putting a number back here
+    restores the collision, and it shows up as a bind error six tests deep rather than anywhere
+    near the line that caused it, which is the reason this is checked rather than remembered.
+    """
+    for name, service in services.items():
+        for mapping in service.get("ports") or []:
+            assert isinstance(mapping, str), (
+                f"{name} publishes {mapping!r} in long form; this check reads the short one"
+            )
+            host, _, container = mapping.rpartition(":")
+            assert host, f"{name} publishes {mapping!r} with no host half to check"
+            assert PUBLISHED_HOST_PORT.match(host), (
+                f"{name} publishes host port {host!r}, which is a literal rather than a variable "
+                f"with a default; the tier cannot override it and will collide with `make up`"
+            )
+            assert container.isdigit(), (
+                f"{name} publishes container port {container!r}, which is not a number"
             )
 
 

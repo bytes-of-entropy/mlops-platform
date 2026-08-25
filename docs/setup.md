@@ -258,13 +258,13 @@ timeout. So the work in this section is doing the *pulling and building* first, 
 anything timed. Pull inside the suite and a slow network arrives as a failed assertion about
 idempotency.
 
-**Nothing else may be holding the stack's ports when the suite runs.** The tier runs under its own
-compose project name, which isolates containers, networks and volumes — but not published host ports,
-and the compose file publishes fixed ones: `8080`, `7077`, `9000`, `9001`, `5000` and `8082`. A stack
-left up from a by-hand session takes every one of them, and the tier then fails with `Bind for
-0.0.0.0:7077 failed: port is already allocated` under a test name that claims idempotency is at fault.
-This is an open defect rather than a rule of nature, and section 8 has it as its own entry. Until it is
-fixed, `down` first and prove it:
+**The tier no longer needs the machine's ports to itself.** It runs under its own compose project
+name, which isolates containers, networks and volumes but not published host ports. So the compose
+file names no fixed host port of its own: the host half of each mapping is a variable whose default is
+the number `make up` has always published, and the tier sets each one to `0`, which asks Docker for a
+free port at bind time. A stack left up from a by-hand session is no longer a reason for the suite to
+fail. Bring it down first anyway if you want a clean read of the timings, since two stacks on one
+machine share its CPU and its disk:
 
 ```powershell
 ./make.ps1 doctor            # the preconditions alone, starting nothing
@@ -275,7 +275,7 @@ fixed, `down` first and prove it:
 ./make.ps1 up                # the rest of the ~20 GB: second worker and Airflow
 ./make.ps1 ps
 ./make.ps1 down              # keeps volumes; the suite expects to start from stopped
-docker ps                    # must list nothing -- this is the port check, not a formality
+docker ps                    # what is still up, if anything
 .venv\Scripts\python.exe -m pytest
 ```
 
@@ -378,21 +378,31 @@ Use `./make.ps1 <target>`. Every target is mirrored, and a test asserts the two 
 
 ### `Bind for 0.0.0.0:<port> failed: port is already allocated`
 
-Something already holds one of the stack's published ports — almost always a stack left up from a
-by-hand session, since the tier's own project name isolates everything *except* host ports.
+Something on this machine holds a port `make up` wants. The integration tier cannot produce this any
+more, since it publishes nothing at a fixed number, so the holder is another program or an earlier
+stack, and the port is one of `8080`, `7077`, `9000`, `9001`, `5000` or `8082`.
 
 ```powershell
 docker ps --format '{{.Names}}\t{{.Ports}}'
+Get-NetTCPConnection -State Listen -LocalPort 5000 | Select-Object OwningProcess
 ./make.ps1 down
-docker compose -p mlops-platform-tests down
 ```
 
-Then re-run. This is the third defect the first tier runs found, and it is a design defect rather than
-a machine one: two compose project names that publish the same fixed host ports cannot coexist, so the
-isolation the second name bought is partial. Every failure in the first full tier run traced to it —
-including a Spark master that then crashed with `java.net.UnknownHostException: <container id>:
-Temporary failure in name resolution`, which is debris from the aborted network programming rather than
-a Spark fault: a container whose endpoint never finished being created has no name to resolve.
+If the holder is not one of Docker's, either stop it or publish somewhere else for this session. The
+host half of every mapping is a variable, so nothing needs editing to do that:
+
+```powershell
+$env:MLFLOW_HOST_PORT = '5001'   # this shell only; the compose default is still 5000
+./make.ps1 up
+```
+
+This was the third defect the first tier runs found, and every failure in that run traced to it,
+including a Spark master that crashed afterwards with `java.net.UnknownHostException: <container id>:
+Temporary failure in name resolution`. That was debris from the aborted network programming rather
+than a Spark fault: a container whose endpoint never finished being created has no name to resolve.
+The fix was to stop the compose file naming host ports at all, so the tier and a by-hand stack can
+hold their own. `docker compose -p mlops-platform-tests port mlflow 5000` reports what a running tier
+was given, when you want to reach it.
 
 ### The doctor refuses: `container runtime`
 

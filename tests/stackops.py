@@ -16,6 +16,7 @@ round trip to ask what it actually said.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from dataclasses import dataclass
 
@@ -50,6 +51,26 @@ QUICKSTART = (*BASE, "-f", "compose/docker-compose.quickstart.yml")
 #: The whole spine, which is the only shape that has an Airflow to schedule anything.
 FULL = (*BASE, "--profile", "full")
 
+#: Host ports for the tier, left to the kernel to choose. The project name above isolates
+#: containers, networks and volumes and nothing else, so while the compose file published fixed
+#: host ports the tier could not start alongside a by-hand stack: whichever bound second failed,
+#: and it failed as `Bind for 0.0.0.0:7077 failed: port is already allocated` underneath test
+#: names about idempotency and smoke. A host port of 0 asks Docker for a free one at bind time.
+#:
+#: That is deliberately not a scan for a free port before starting. Between finding one free and
+#: binding it, anything on the machine can take it, which trades a collision that happens every
+#: time for one that happens sometimes -- and a test that fails sometimes is the worse defect.
+#: `docker compose -p mlops-platform-tests port <service> <container-port>` reports what was
+#: assigned, and `compose ps` prints the mappings, so the diagnostics already carry them.
+EPHEMERAL_PORTS = {
+    "SPARK_MASTER_UI_HOST_PORT": "0",
+    "SPARK_MASTER_HOST_PORT": "0",
+    "MINIO_API_HOST_PORT": "0",
+    "MINIO_CONSOLE_HOST_PORT": "0",
+    "MLFLOW_HOST_PORT": "0",
+    "AIRFLOW_HOST_PORT": "0",
+}
+
 TIMEOUT_S = 600
 #: Enough log to hold a start-up objection, short of replaying the whole boot.
 LOG_TAIL_LINES = 30
@@ -64,6 +85,9 @@ def run(argv: list[str]) -> subprocess.CompletedProcess[str]:
         encoding="utf-8",
         timeout=TIMEOUT_S,
         check=False,
+        # Every call, not only `up`: compose interpolates on each invocation, and a `down` that
+        # rendered different ports from the `up` it is tearing down is a different stack to it.
+        env={**os.environ, **EPHEMERAL_PORTS},
     )
 
 

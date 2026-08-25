@@ -33,9 +33,14 @@ services:
       - org.apache.spark.deploy.master.Master
       - --host
       - spark-master
+    # The host half of every published port is a variable with today's number as its default, so
+    # `make up` publishes exactly what it always did. The integration tier sets these to 0 and lets
+    # Docker pick free ports at bind time. A compose project name isolates containers, networks and
+    # volumes but not published host ports, so with fixed numbers here the tier could not start
+    # while a by-hand stack was up, and the bind error surfaced under test names about idempotency.
     ports:
-      - "8080:8080"
-      - "7077:7077"
+      - "${SPARK_MASTER_UI_HOST_PORT:-8080}:8080"
+      - "${SPARK_MASTER_HOST_PORT:-7077}:7077"
     healthcheck:
       # wget rather than curl: this image ships gnupg2, wget, bash, tini, procps and
       # net-tools, and no curl at all. A healthcheck naming a binary the image lacks never
@@ -107,8 +112,8 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${MINIO_API_HOST_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_HOST_PORT:-9001}:9001"
     volumes:
       - minio-data:/data
     healthcheck:
@@ -165,7 +170,7 @@ services:
       AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}
       AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
     ports:
-      - "5000:5000"
+      - "${MLFLOW_HOST_PORT:-5000}:5000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -216,7 +221,7 @@ services:
       # to an address nobody configured.
       MLFLOW_TRACKING_URI: http://mlflow:5000
     ports:
-      - "8082:8080"
+      - "${AIRFLOW_HOST_PORT:-8082}:8080"
     volumes:
       - airflow-logs:/opt/airflow/logs
       - ./airflow/dags:/opt/airflow/dags:ro

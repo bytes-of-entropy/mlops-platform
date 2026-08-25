@@ -20,8 +20,27 @@ import pytest
 from preflight.credentials import credentials_skip_reason, missing_credentials, parse_env_pairs
 from tests.conftest import COMPOSE_FILE, ENV_EXAMPLE_FILE, QUICKSTART_FILE, REPO_ROOT
 
-#: The three interpolation forms compose accepts all name the variable the same way.
-INTERPOLATION = re.compile(r"\$\{([A-Z0-9_]+)")
+#: The three interpolation forms compose accepts, with whatever follows the name captured so the
+#: forms can be told apart: bare, `:?message`, or `:-default`.
+INTERPOLATION = re.compile(r"\$\{([A-Z0-9_]+)(:[?-][^}]*)?\}")
+
+
+def required_names(text: str) -> set[str]:
+    """The names in one file that a machine has to supply for compose to render it.
+
+    A bare `${NAME}` and a `${NAME:?message}` both make compose refuse when nothing supplies
+    the value, which is the precondition this module's guard exists to report. A `${NAME:-5}`
+    renders on a machine that has never heard of the variable, so it is not something to demand
+    of anyone: the published host ports are written that way precisely so that a fresh clone
+    publishes the documented numbers and the integration tier can override them with zero.
+    Counting those as required would have the guard skip the tier over a port number.
+    """
+    names: set[str] = set()
+    for name, suffix in INTERPOLATION.findall(text):
+        if not suffix.startswith(":-"):
+            names.add(name)
+    return names
+
 
 EXAMPLE_TEXT = ENV_EXAMPLE_FILE.read_text(encoding="utf-8")
 
@@ -29,7 +48,7 @@ EXAMPLE_TEXT = ENV_EXAMPLE_FILE.read_text(encoding="utf-8")
 def interpolated_names() -> set[str]:
     names: set[str] = set()
     for path in (COMPOSE_FILE, QUICKSTART_FILE):
-        names |= set(INTERPOLATION.findall(path.read_text(encoding="utf-8")))
+        names |= required_names(path.read_text(encoding="utf-8"))
     return names
 
 
@@ -41,6 +60,20 @@ def test_the_example_file_names_variables_at_all() -> None:
 def test_every_variable_the_compose_files_interpolate_is_in_the_example() -> None:
     """A variable the spine needs and the example omits is one the guard cannot ask for."""
     assert interpolated_names() <= set(parse_env_pairs(EXAMPLE_TEXT))
+
+
+def test_a_defaulted_interpolation_is_not_something_to_demand() -> None:
+    """The distinction the two set comparisons above depend on, pinned on its own.
+
+    Collapsing this back to "every name that appears" is the tempting simplification, and it
+    would make the guard refuse a machine for not having chosen a port number.
+    """
+    text = """
+${POSTGRES_USER}
+${POSTGRES_PASSWORD:?set it}
+${MLFLOW_HOST_PORT:-5000}
+"""
+    assert required_names(text) == {"POSTGRES_USER", "POSTGRES_PASSWORD"}
 
 
 def test_the_example_names_nothing_the_compose_files_do_not_use() -> None:
