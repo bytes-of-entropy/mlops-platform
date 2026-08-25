@@ -1,4 +1,4 @@
-# 001 — Defer the registry, drift and canary milestones until two real workloads exist
+# 001: Defer the registry, drift and canary milestones until two real workloads exist
 
 - **Date:** 2026-08-18
 - **Status:** accepted
@@ -36,7 +36,7 @@ fires when it should. A reviewer who asks "why 5% recall degradation" gets an an
 Publishing on M0–M2 will close the containerization gap in reviewer terms as completely as
 publishing on M0–M5 would, because the gap is about Docker and Kubernetes literacy rather than about
 MLOps maturity. I expect no interviewer to remark on the absence of a registry milestone, and I
-expect at least one to ask why the drift thresholds are what they are — a question that is
+expect at least one to ask why the drift thresholds are what they are, a question that is
 answerable only in the deferred version.
 
 ## Deciding evidence

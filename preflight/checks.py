@@ -2,12 +2,12 @@
 
 Ordered because each one is only meaningful when the one before it passed: there is nothing to say
 about a volume on a machine whose daemon is stopped. Everything a check needs is passed in, so the
-whole pipeline can be exercised on a laptop with no runtime -- including the failures, which is the
+whole pipeline can be exercised on a laptop with no runtime, including the failures, which is the
 half that is otherwise only ever seen in production.
 
 Three statuses, not two. ``UNKNOWN`` exists because the honest answer to "were these credentials
-the ones this volume was built with" is sometimes *cannot tell* -- a volume created before the
-fingerprint existed carries no record -- and reporting that as OK is the exact class of bug this
+the ones this volume was built with" is sometimes *cannot tell*, because a volume created before the
+fingerprint existed carries no record, and reporting that as OK is the exact class of bug this
 package was written to stop. It does not fail the run: a pre-existing volume is legitimate, and
 blocking ``up`` on it would push a reviewer toward the one command that destroys their data.
 """
@@ -120,7 +120,7 @@ def check_postgres_volume(volume: VolumeState, user: str, password: str) -> Resu
             "this volume was initialised with a different POSTGRES_USER or POSTGRES_PASSWORD, and "
             + READ_TIMING["POSTGRES_USER"].consequence
             + ". Either restore the values it was created with, or run `make reset` to discard the "
-            "volume and start over -- which also discards the MLflow runs and Airflow history "
+            "volume and start over, which also discards the MLflow runs and Airflow history "
             "inside it",
         )
 
@@ -137,7 +137,7 @@ def check_postgres_volume(volume: VolumeState, user: str, password: str) -> Resu
 
 
 def run(inputs: Inputs) -> list[Result]:
-    """Every check in order, stopping at the first failure -- and saying what it stopped before.
+    """Every check in order, stopping at the first failure, and saying what it stopped before.
 
     A short list of green lines reads as a clean bill of health. Naming the checks that never ran
     is the difference between "nothing is wrong" and "nothing else was looked at".

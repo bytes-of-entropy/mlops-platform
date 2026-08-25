@@ -3,7 +3,7 @@
 # reported before a start rather than diagnosed after one.
 #
 # This runs exactly once: the entrypoint executes docker-entrypoint-initdb.d only while creating an
-# empty data directory, which is the same moment -- and the only moment -- POSTGRES_USER and
+# empty data directory, which is the same moment (and the only moment) POSTGRES_USER and
 # POSTGRES_PASSWORD have any effect. Everything after that reads the role stored here, not the
 # variables in the environment, which is why editing .env against a kept volume changes nothing and
 # says nothing.
@@ -12,7 +12,7 @@
 # reviewers to keep, and a credential pair readable back out of it would be a worse problem than
 # the one being solved. The salt is generated here so it never exists outside the volume.
 #
-# Kept byte-compatible with preflight.credentials.fingerprint -- same join, same order, no trailing
+# Kept byte-compatible with preflight.credentials.fingerprint: same join, same order, no trailing
 # newline. A test runs this script and compares the two, because two implementations of one digest
 # agree until the day they do not.
 

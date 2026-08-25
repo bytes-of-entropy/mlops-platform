@@ -1,7 +1,7 @@
 """Shared fixtures. Compose files are parsed as data, never rendered by Docker, so the
 whole contract suite runs on a machine with no container runtime installed.
 
-The preconditions -- is there a daemon, are the credentials set -- are imported from ``preflight``
+The preconditions (is there a daemon, are the credentials set) are imported from ``preflight``
 rather than implemented here. They were implemented here first, and then ``make doctor`` needed the
 same two answers: a suite that skipped on its own idea of "configured" while the doctor passed on
 another would be two guards disagreeing about one machine. Dependencies point one way only, tests
@@ -113,12 +113,12 @@ def describe_process(
     """Everything needed to diagnose a failed subprocess, in the assertion itself.
 
     An integration failure on a machine that is not this one costs a round trip to ask
-    "what did it actually say". Docker Compose splits its output unpredictably -- progress
-    and the unhealthy-container line land on stderr in some versions and stdout in others --
+    "what did it actually say". Docker Compose splits its output unpredictably: progress
+    and the unhealthy-container line land on stderr in some versions and stdout in others,
     so a report that reads only stderr can be empty at exactly the moment it matters.
 
-    ``extra`` carries what the caller could gather afterwards -- container state, service
-    logs -- because the cause of a failed ``up`` is usually inside a container's log rather
+    ``extra`` carries what the caller could gather afterwards: container state, service
+    logs, because the cause of a failed ``up`` is usually inside a container's log rather
     than in the output of the command that started it.
 
     Stays in the test tier rather than moving into ``preflight`` with the preconditions: this

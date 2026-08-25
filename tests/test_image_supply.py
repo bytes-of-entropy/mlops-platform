@@ -8,7 +8,7 @@ digest pin would have gone with it, so this is not a failure that pinning harder
 The set to ask a registry about is not the set of `image` keys, which is what this module used
 to assume. A built image's tag is local: it names something this repository produces, so no
 registry has ever heard of it and asking one reports a withdrawal that has not happened. What a
-registry must still answer for is the base that image is built *from* -- the same supply-chain
+registry must still answer for is the base that image is built *from*: the same supply-chain
 claim, one level down, and the level the pin actually lives at. So each `image` key is sorted
 into exactly one of two sets, and a third test asserts that the sorting accounts for all of
 them, because the way this went wrong was an image quietly joining the wrong one.
@@ -35,7 +35,7 @@ import yaml
 from tests.conftest import COMPOSE_FILE, REPO_ROOT, describe_process, requires_docker
 
 #: Namespaces that still answer for some tags but are published as frozen archives. Reaching
-#: for one is how a withdrawn dependency comes back wearing a working URL -- bitnamilegacy
+#: for one is how a withdrawn dependency comes back wearing a working URL; bitnamilegacy
 #: holds the exact tag this spine used to name, which makes it the path of least resistance
 #: and the reason this assertion exists. Its publisher states that catalogue "will receive no
 #: further updates or support".
@@ -67,7 +67,7 @@ def pulled_images() -> list[str]:
 
 
 def built_bases() -> list[str]:
-    """The `FROM` of everything this spine builds -- what a registry answers for instead."""
+    """The `FROM` of everything this spine builds: what a registry answers for instead."""
     bases: set[str] = set()
     for service in SERVICES.values():
         context = _build_context(service)
@@ -100,7 +100,7 @@ def test_every_service_image_is_either_pulled_or_built() -> None:
 
     A service gaining a `build` moves its tag out of the pulled set, which is correct and also
     silent: the pin it used to be checked against stops being checked, and nothing says so. This
-    asserts the two sets still account for every `image` key between them -- so an image can move
+    asserts the two sets still account for every `image` key between them, so an image can move
     from one to the other, but it cannot fall out of both.
     """
     declared = {str(service["image"]) for service in SERVICES.values()}
@@ -142,7 +142,7 @@ def test_every_pinned_image_still_resolves(reference: str) -> None:
     binary = shutil.which("docker")
     assert binary is not None, "requires_docker admitted this test with no docker client present"
     argv = [binary, "manifest", "inspect", reference]
-    completed = subprocess.run(  # noqa: S603 -- fixed argv, resolved path, no shell
+    completed = subprocess.run(  # noqa: S603 (fixed argv, resolved path, no shell)
         argv,
         capture_output=True,
         text=True,

@@ -1,4 +1,4 @@
-# NNN — <decision, stated as a decision, not as a topic>
+# NNN: <decision, stated as a decision, not as a topic>
 
 - **Date:** YYYY-MM-DD
 - **Status:** proposed | accepted | superseded by NNN
@@ -24,7 +24,7 @@ wrong, the wrong prediction stays and the outcome is added below it.
 
 ## Deciding evidence
 
-What was measured, or "none yet — decided on judgement, revisit at <milestone>".
+What was measured, or "none yet; decided on judgement, revisit at <milestone>".
 
 ## What would change my mind
 

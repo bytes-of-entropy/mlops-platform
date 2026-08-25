@@ -25,7 +25,7 @@ services:
     # what a container needs; sbin/start-master.sh daemonises and the container would exit.
     #
     # --host is not decoration either. The master advertises the address it binds to, and
-    # without this it binds to the container hostname -- a short container ID that changes
+    # without this it binds to the container hostname, a short container ID that changes
     # every up. Naming the service makes the advertised URL identical to the one the workers
     # are given below, which is one fewer thing that can drift.
     command:
@@ -179,7 +179,7 @@ services:
     healthcheck:
       # python rather than curl: this image ships an interpreter by construction and does not
       # promise curl. A healthcheck naming a binary the image lacks never reports healthy, so it
-      # reads as a broken service rather than a broken healthcheck -- see Spark, where the same
+      # reads as a broken service rather than a broken healthcheck; see Spark, where the same
       # mistake was already caught once.
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health').read()"]
       interval: 15s
@@ -205,7 +205,7 @@ services:
       # The image acts on the two credentials below only when told to. Without these flags
       # they are inert: "airflow standalone" then invents its own admin password and writes
       # it to a file inside the container, so the documented login exists nowhere but the
-      # documentation. Migration is not optional here either -- creating a user needs a
+      # documentation. Migration is not optional here either: creating a user needs a
       # schema, and the entrypoint tolerates its own failure, so an unmigrated database
       # turns the create into a no-op and hands the password back to standalone.
       _AIRFLOW_DB_MIGRATE: "true"
@@ -235,7 +235,7 @@ services:
     healthcheck:
       # python rather than curl: this is a python image by construction, so the interpreter is the
       # one dependency it cannot be missing. Same reasoning as the Spark healthcheck above, one step
-      # further -- nothing here depends on which utilities the base image happened to include, so a
+      # further: nothing here depends on which utilities the base image happened to include, so a
       # base-image change cannot turn a healthy service into an unhealthy one.
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health').read()"]
       interval: 15s

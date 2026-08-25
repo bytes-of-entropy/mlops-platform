@@ -1,4 +1,4 @@
-# 003 — The spine is docker-compose with pinned tags, and the quickstart is a capped profile
+# 003: The spine is docker-compose with pinned tags, and the quickstart is a capped profile
 
 - **Date:** 2026-08-18
 - **Status:** accepted
@@ -28,7 +28,7 @@ and 2.0 CPUs, and the totals are asserted by a test rather than claimed in prose
 A single unprofiled compose file plus a README paragraph saying "reduce the worker memory if you
 have less RAM". It is less machinery. It loses because an unverified claim about a 4 GB envelope is
 exactly the kind of README statement this portfolio's publication gate exists to forbid, and because
-the failure mode — a reviewer's laptop swapping during the ten-minute quickstart — is invisible to
+the failure mode (a reviewer's laptop swapping during the ten-minute quickstart) is invisible to
 the author and fatal to the reviewer.
 
 ## Prediction (recorded before the evidence)
@@ -53,4 +53,4 @@ is wrong and the envelope has to be renegotiated rather than the claim quietly d
 
 Makes the reviewer path checkable and the reproducibility claim mechanical. Costs two compose files
 and a small test suite to maintain, and it means every new service must arrive with limits and a
-healthcheck or the build goes red — which is the intent.
+healthcheck or the build goes red, which is the intent.

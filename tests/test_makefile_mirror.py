@@ -55,7 +55,7 @@ def test_no_wait_is_left_unbounded() -> None:
     """``--wait`` with no ``--wait-timeout`` waits forever.
 
     A service that never reports healthy then hangs the job until something outside this
-    repository kills it, and whatever kills it takes the compose logs with it -- so the one
+    repository kills it, and whatever kills it takes the compose logs with it, so the one
     artefact that would have said which service failed is the one that goes missing.
     """
     for name in ("Makefile", "make.ps1"):

@@ -1,4 +1,4 @@
-# 002 — Serving is a plain Deployment, Service and Ingress; no KServe
+# 002: Serving is a plain Deployment, Service and Ingress; no KServe
 
 - **Date:** 2026-08-18
 - **Status:** accepted
@@ -9,7 +9,7 @@
 
 The gap this repository closes is Docker and Kubernetes literacy. The question a reviewer asks is
 whether the author can containerize a model service, get it scheduled, keep it healthy, scale it and
-roll it back. A serving framework — KServe, Seldon, BentoML's operator — answers a different
+roll it back. A serving framework (KServe, Seldon, BentoML's operator) answers a different
 question: whether the author can install and configure someone else's abstraction over those things.
 
 ## Decision
@@ -24,7 +24,7 @@ KServe. It is the more impressive line on a resume and it is what a large platfo
 actually run. It loses on two counts. First, it hides exactly the mechanics being demonstrated: an
 `InferenceService` that works tells a reviewer nothing about whether the author understands probes.
 Second, it is a CRD, a controller and a service mesh dependency to install, debug and explain inside
-a `kind` cluster on a laptop — cost measured in days, against a gap that a Deployment closes.
+a `kind` cluster on a laptop: cost measured in days, against a gap that a Deployment closes.
 
 ## Prediction (recorded before the evidence)
 

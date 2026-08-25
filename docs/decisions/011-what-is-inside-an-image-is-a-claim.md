@@ -1,4 +1,4 @@
-# 011 — What is inside an image is a claim, and two of ours were wrong
+# 011: What is inside an image is a claim, and two of ours were wrong
 
 - **Date:** 2026-08-23
 - **Status:** accepted
@@ -7,8 +7,8 @@
 
 ## Context
 
-The first start on a machine with a container runtime failed. Not on credentials — `009`'s doctor
-passed all three checks and Postgres came up healthy — and not on anything the compose contract
+The first start on a machine with a container runtime failed. Not on credentials (`009`'s doctor
+passed all three checks and Postgres came up healthy), and not on anything the compose contract
 asserts. Six of seven services reported healthy and MLflow never did.
 
 Two separate defects were behind it, and they are the same mistake twice.
@@ -34,8 +34,8 @@ than start, the volume is named, the mount is read-only. Every one of those chec
 service that could not start, because all of them describe the compose file and none of them
 describe what is inside the images the compose file names.
 
-This is the same shape as the DAG import rule in `010` — a dependency that exists only in the mind
-of whoever wrote the file — and it went unnoticed for the same reason: nothing had run.
+This is the same shape as the DAG import rule in `010`, a dependency that exists only in the mind
+of whoever wrote the file, and it went unnoticed for the same reason: nothing had run.
 
 ## Decision
 
@@ -51,8 +51,8 @@ test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('ht
 ```
 
 Swapping `curl` for `wget` would have fixed the symptom while keeping the bet. Both of these images
-are Python images by construction — one is `apache/airflow:2.9.2-python3.11`, the other is built on
-MLflow's own image — so the interpreter is the one dependency they cannot be missing. Nothing here
+are Python images by construction: one is `apache/airflow:2.9.2-python3.11`, the other is built on
+MLflow's own image, so the interpreter is the one dependency they cannot be missing. Nothing here
 now depends on which utilities a base image happened to include, which means a base-image bump
 cannot turn a healthy service into an unhealthy one.
 
@@ -64,7 +64,7 @@ builds names both a tag and a pinned `FROM`.
 
 `up` and `up-quickstart` now pass `--build`, and so does the integration tier's single compose
 invocation, so no path can start a stale image. A separate `build` target exists so the cost can be
-paid outside a timed window — the integration tier bounds every compose call it makes, and a cold
+paid outside a timed window, since the integration tier bounds every compose call it makes, and a cold
 build is minutes of that budget spent on work that is identical every time.
 
 ### What this deliberately does not fix
@@ -73,7 +73,7 @@ The `mlflow` bucket still does not exist. `--default-artifact-root s3://mlflow/`
 nothing creates; the server does not touch it at start-up and the smoke DAG logs params and metrics
 only, so neither the start nor the M0 gate depends on it. `boto3` now being present makes the first
 artifact write possible rather than certain. Creating the bucket needs an init container running
-`mc mb`, which is the same decision as scoping MLflow's MinIO credentials away from root — one
+`mc mb`, which is the same decision as scoping MLflow's MinIO credentials away from root: one
 change, deliberately not made in passing.
 
 One assumption of the same family remains unverified: Airflow is configured with
@@ -82,7 +82,7 @@ checked. It is the next thing to run on the build machine, not something to reas
 
 ## Alternatives rejected
 
-**`pip install` in the container command.** This is the third time this idea has been rejected —
+**`pip install` in the container command.** This is the third time this idea has been rejected:
 `005` for the Spark image, `010` for the DAG's MLflow client, now here. It makes the first `up`
 depend on PyPI resolving today, and it re-pays the cost on every restart of a service whose whole
 purpose is to be boring.
@@ -92,7 +92,7 @@ obtain two packages we can name. A wide unpinned install to avoid a narrow pinne
 trade in a repository whose claim is reproducibility.
 
 **`postgresql+pg8000://`, avoiding the C extension.** `pg8000` is not in the image either, so this
-does not remove the build — it only changes which package the build installs, and picks the less
+does not remove the build; it only changes which package the build installs, and picks the less
 travelled driver while doing so.
 
 **SQLite for MLflow's backend store.** `sqlite:///...` needs no driver at all and would have had
@@ -110,7 +110,7 @@ without one.
 ## Prediction (recorded before the evidence)
 
 I expect the build to succeed and MLflow to come up healthy, and I expect the next failure to be
-Airflow — either the same driver question, or the smoke DAG's REST payload shape, which `010`
+Airflow, either the same driver question, or the smoke DAG's REST payload shape, which `010`
 already predicted would fail once before passing. I expect `psycopg2-binary==2.9.9` and
 `boto3==1.34.131` to both resolve; if either does not, the build fails loudly at a named version,
 which is the behaviour a pin is for. I do not expect the bucket gap to surface at M0.

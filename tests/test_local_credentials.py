@@ -6,7 +6,7 @@ because compose refuses to render a file with an unset interpolation. Both preco
 legitimate states for a fresh machine to be in, and each has to say which one it is.
 
 The variable list is not written here. It is read from .env.example, so most of what follows
-is about whether that file is a trustworthy source -- which is the only thing the guard
+is about whether that file is a trustworthy source, which is the only thing the guard
 depends on.
 """
 

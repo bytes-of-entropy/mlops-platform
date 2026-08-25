@@ -1,7 +1,7 @@
 """The quickstart claims 4 GB and 2 CPUs. That claim is checked here, not trusted.
 
 The envelope is computed from the declared limits of exactly the services the quickstart
-starts — the base file minus everything gated behind the `full` profile — with the
+starts (the base file minus everything gated behind the `full` profile) with the
 override applied the way `docker compose -f a -f b` would apply it.
 """
 

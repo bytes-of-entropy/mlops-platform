@@ -1,4 +1,4 @@
-# 008 — Airflow creates the admin account it is given, and its username is pinned
+# 008: Airflow creates the admin account it is given, and its username is pinned
 
 - **Date:** 2026-08-23
 - **Status:** accepted
@@ -29,7 +29,7 @@ on by the image, and nothing in the repository was looking one level deeper than
 Set `_AIRFLOW_DB_MIGRATE` and `_AIRFLOW_WWW_USER_CREATE`, so the entrypoint migrates the schema and
 then creates the account it was handed. Migration is not incidental: creating a user needs a schema,
 and the entrypoint tolerates its own failure, so an unmigrated database turns the create into a
-no-op and hands the password back to standalone — the original bug, one step further along.
+no-op and hands the password back to standalone: the original bug, one step further along.
 
 Pin `_AIRFLOW_WWW_USER_USERNAME` to `admin` in the compose file and drop `AIRFLOW_ADMIN_USER` from
 `.env.example`, leaving seven required variables. Standalone keys on that exact name, so any other
@@ -47,7 +47,7 @@ Drop `command: standalone` and run `airflow webserver` beside a separate schedul
 the entrypoint own migration and user creation the way a real deployment does. It is the more
 faithful Airflow and it keeps a configurable username. It loses on the envelope decided in `003`: a
 second container's memory, permanently, bought with a username nobody needs to choose. If a later
-milestone needs more than one Airflow account, this is the decision to revisit — not extend.
+milestone needs more than one Airflow account, this is the decision to revisit, not extend.
 
 The weaker alternative was to keep standalone and document that the password comes from the
 container log. Honest, and cheaper than either fix, but it replaces a credential the operator sets
@@ -56,8 +56,8 @@ with one they have to go and find, and it leaves two variables in `.env.example`
 ## Prediction (recorded before the evidence)
 
 I expect the new rule to catch at least one more instance by M2, most likely in a chart's values or
-an image's own entrypoint, because the shape — a value passed to software that has to be told
-separately to read it — is common and invisible. I expect the pinned username to be questioned by
+an image's own entrypoint, because the shape (a value passed to software that has to be told
+separately to read it) is common and invisible. I expect the pinned username to be questioned by
 anyone reading the file and to survive the question.
 
 ## Deciding evidence

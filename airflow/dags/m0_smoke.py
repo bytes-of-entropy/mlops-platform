@@ -1,6 +1,6 @@
 """The M0 gate as an artefact: one DAG, one task, one MLflow run.
 
-M0 claims the spine is wired. Until something crosses it, that claim rests on healthchecks --
+M0 claims the spine is wired. Until something crosses it, that claim rests on healthchecks,
 which prove each service answers its own port and nothing about whether any two of them can talk.
 This DAG is the smallest thing that crosses the whole width: Airflow parses it, executes it, it
 writes a run to MLflow, and MLflow persists that run to Postgres. One artefact, four boundaries,
@@ -13,12 +13,12 @@ dataset in the folder that is supposed to hold real ones.
 Two things it does not prove, stated because a smoke test that overstates its reach is worse than
 none. It does not touch MinIO: logging an artefact goes through the artifact store rather than the
 tracking API, which would need an S3 client this image does not ship. And it exercises the
-scheduler's liveness only through the healthcheck -- the integration tier runs this synchronously so
+scheduler's liveness only through the healthcheck; the integration tier runs this synchronously so
 its assertion cannot depend on how long a scheduler takes to notice a manual trigger.
 
 The MLflow REST API is called through the standard library on purpose. This image is pinned and has
 no install step, so an `import mlflow` here would parse on the authoring machine and fail inside the
-container -- a dependency that exists only in the mind of whoever wrote the DAG. A contract test
+container: a dependency that exists only in the mind of whoever wrote the DAG. A contract test
 keeps the imports in this file to the standard library and Airflow itself.
 """
 
@@ -76,7 +76,7 @@ def tracking_base() -> str:
 
 
 def _post(base: str, path: str, payload: dict[str, Any]) -> dict[str, Any]:
-    request = urllib.request.Request(  # noqa: S310 -- http, to a service on the compose network
+    request = urllib.request.Request(  # noqa: S310 (http, to a service on the compose network)
         f"{base}{API_ROOT}/{path}",
         data=json.dumps(payload).encode("utf-8"),
         headers={"Content-Type": "application/json"},
@@ -90,7 +90,7 @@ def _post(base: str, path: str, payload: dict[str, Any]) -> dict[str, Any]:
 
 def _get(base: str, path: str, query: dict[str, str]) -> dict[str, Any]:
     url = f"{base}{API_ROOT}/{path}?{urllib.parse.urlencode(query)}"
-    request = urllib.request.Request(url, method="GET")  # noqa: S310 -- as above
+    request = urllib.request.Request(url, method="GET")  # noqa: S310 (as above)
     with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:  # noqa: S310
         body = response.read()
     parsed: dict[str, Any] = json.loads(body or b"{}")
@@ -119,8 +119,8 @@ def experiment_id(base: str) -> str:
 @dag(
     dag_id=DAG_ID,
     description="M0 smoke: prove Airflow can reach MLflow and MLflow can reach Postgres",
-    # Triggered, never scheduled. This exists to be run deliberately -- by a reviewer or by the
-    # integration tier -- and a schedule would fill the metadata database with proof of nothing.
+    # Triggered, never scheduled. This exists to be run deliberately, by a reviewer or by the
+    # integration tier, and a schedule would fill the metadata database with proof of nothing.
     schedule=None,
     start_date=datetime(2026, 1, 1, tzinfo=UTC),
     catchup=False,

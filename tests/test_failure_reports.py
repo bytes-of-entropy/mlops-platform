@@ -2,9 +2,9 @@
 
 The integration tier runs on one machine and is read on another, so its assertion text is
 the entire diagnosis. `compose up failed:` followed by nothing is a true statement and a
-useless one -- it was produced by reading only stderr, which Docker Compose does not
+useless one: it was produced by reading only stderr, which Docker Compose does not
 reliably use. These tests hold the report to naming the command, the exit code, and both
-streams, including when a stream is empty -- and to carrying whatever the caller gathered
+streams, including when a stream is empty, and to carrying whatever the caller gathered
 afterwards, because the reason a stack refused to come up is normally in a container's log
 and not in the output of the command that started it.
 """
@@ -115,7 +115,7 @@ def test_no_integration_assertion_reads_a_stream_without_the_report() -> None:
     """The report is worth only as much as its call sites.
 
     A helper fixed everywhere except the two functions that start and stop the stack leaves
-    the one failure that matters reporting stderr alone -- which is the original bug, still
+    the one failure that matters reporting stderr alone, which is the original bug, still
     present, behind eleven passing tests. So the constraint is on the modules, not the helper:
     nothing in the integration tier may assert on a return code itself.
     """

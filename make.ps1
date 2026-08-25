@@ -1,5 +1,5 @@
 <#
-    Windows mirror of the Makefile. The Makefile stays canonical — CI runs it — and
+    Windows mirror of the Makefile. The Makefile stays canonical, since CI runs it, and
     tests/test_makefile_mirror.py fails if a target exists in one and not the other.
 #>
 [CmdletBinding()]
@@ -49,7 +49,7 @@ switch ($Target) {
         Invoke-Checked $Py @('-m', 'pip', 'install', '--upgrade', 'pip')
         Invoke-Checked $Py @('-m', 'pip', 'install', '-e', '.[dev]')
         # Mirrors the Makefile: hooks are per-clone, so a committed config installs nothing on
-        # its own. Absent .git is not an error -- the CI hooks job runs them either way.
+        # its own. Absent .git is not an error; the CI hooks job runs them either way.
         if (Test-Path '.git') { Invoke-Checked $Py @('-m', 'pre_commit', 'install') }
         else { Write-Output 'no .git here, so no hook was installed; the CI hooks job runs them regardless' }
     }

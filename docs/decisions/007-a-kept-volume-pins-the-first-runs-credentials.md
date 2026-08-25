@@ -14,7 +14,7 @@ FATAL:  role "bytesofentropy" does not exist
 
 `POSTGRES_USER` and `POSTGRES_PASSWORD` are read by the `postgres` image's entrypoint **only when
 the data directory is empty**. On every subsequent start they are ignored, because the roles already
-exist inside the volume. `postgres-data` is a named volume that `make down` deliberately keeps —
+exist inside the volume. `postgres-data` is a named volume that `make down` deliberately keeps, and
 that is the whole point of `test_state_survives_down_and_up`, and record 001's reasoning about
 `down --volumes` making idempotency indistinguishable from starting over.
 
@@ -26,7 +26,7 @@ healthy, `up --wait` fails, and the tests that depend on `up` report as broken i
 
 Re-cloning does not help, and this is the part that cost the most time. The compose project name is
 derived from the directory basename, so a fresh clone into a folder named `mlops-platform` reuses
-`mlops-platform_postgres-data` — the same volume, with the same roles in it. The clone is new; the
+`mlops-platform_postgres-data`, the same volume, with the same roles in it. The clone is new; the
 state is not.
 
 ## Decision
@@ -38,8 +38,8 @@ state is one command, `make clean`, and the thing that was missing was any way t
 the output.
 
 The integration tier now gathers `compose ps --all` and `compose logs --tail 30` when a compose
-call fails, and carries both into the assertion message. The line above — the one that names the
-missing role — is in the container log and nowhere else, so a report that reads only the failing
+call fails, and carries both into the assertion message. The line above, the one that names the
+missing role, is in the container log and nowhere else, so a report that reads only the failing
 command's streams is structurally incapable of containing the diagnosis. The build-machine runbook
 names this failure mode with its error string and its one-line fix.
 
@@ -54,7 +54,7 @@ silently destroying whatever a developer had in MinIO and Postgres, on a suite t
 safe to run. A test that removes state to avoid a state-dependent failure is not testing idempotency.
 
 **Hardcode `POSTGRES_USER` so it can never drift.** Puts a credential name in the repository, does
-nothing about `POSTGRES_PASSWORD` — which fails the same way and with a much less obvious message —
+nothing about `POSTGRES_PASSWORD`, which fails the same way and with a much less obvious message,
 and makes the reviewer's `.env` a partial fiction.
 
 **Compare `.env` against the roles in the volume before starting.** Requires an authenticated
@@ -70,15 +70,15 @@ root credentials on every start, so a changed `MINIO_ROOT_USER` produces an auth
 in the tier's `mc` calls rather than an unhealthy container. If that appears, it is this record
 again with a different service, and the fix is the same one command.
 
-What would change my mind: if the gathered log turns out to be empty at the moment of failure —
-because `--wait` tears containers down before the logs can be read — then the diagnosis has to move
+What would change my mind: if the gathered log turns out to be empty at the moment of failure,
+because `--wait` tears containers down before the logs can be read, then the diagnosis has to move
 earlier, into a `ps`-and-log capture that runs on a timer during `up` rather than after it.
 
 ## Deciding evidence
 
 Measured here: **65 passed, 8 skipped**, up from 61 / 8, with the report rendering the postgres case
-end to end from synthetic input. The gathering itself cannot be measured on this machine — it needs
-a runtime — which is the same limitation as record 006 and is why the failure path is exercised
+end to end from synthetic input. The gathering itself cannot be measured on this machine, since it needs
+a runtime, which is the same limitation as record 006 and is why the failure path is exercised
 through a pure function rather than only through a live stack.
 
 ## Consequences

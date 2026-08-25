@@ -2,9 +2,9 @@
 
 `make doctor` runs before every `up`, so it is the one piece of code here that fails closed: a
 check that reports OK when it could not tell would hand a reviewer a stack that starts and then
-misbehaves for a reason nothing printed. That makes the interesting cases the negative ones -- a
+misbehaves for a reason nothing printed. That makes the interesting cases the negative ones: a
 volume built with other credentials, a volume that predates the record, a probe that came back
-unreadable -- and every one of them is reachable here because the checks read what they are given
+unreadable, and every one of them is reachable here because the checks read what they are given
 rather than gathering it themselves.
 """
 
@@ -56,7 +56,7 @@ EXAMPLE_TEXT = ENV_EXAMPLE_FILE.read_text(encoding="utf-8")
 INIT_SCRIPT = REPO_ROOT / "postgres" / "init" / "00-record-init-credentials.sh"
 
 USER = "platform"
-PASSWORD = "1f4c9b2e7a"  # noqa: S105 -- an invented value to digest, not a credential
+PASSWORD = "1f4c9b2e7a"  # noqa: S105 (an invented value to digest, not a credential)
 SALT = "0123456789abcdef0123456789abcdef"
 
 
@@ -76,7 +76,7 @@ def test_every_variable_the_example_declares_is_classified() -> None:
     """An unclassified credential is one whose failure mode nobody has worked out yet.
 
     The table is what the volume check acts on and what the docs quote, so a variable added to
-    .env.example without a row here would be a credential with no stated read timing -- which is
+    .env.example without a row here would be a credential with no stated read timing, which is
     exactly the state Airflow's admin password was in when its login existed only on paper.
     """
     declared = set(parse_env_pairs(EXAMPLE_TEXT))
@@ -312,7 +312,7 @@ def test_the_init_script_and_the_python_digest_agree(tmp_path: Path) -> None:
     shell = shutil.which("sh")
     assert shell, "the skip guard let a machine without sh reach this test"
 
-    completed = subprocess.run(  # noqa: S603 -- resolved interpreter, fixed argv, no shell
+    completed = subprocess.run(  # noqa: S603 (resolved interpreter, fixed argv, no shell)
         [shell, INIT_SCRIPT.as_posix()],
         env={
             "PATH": "/usr/bin:/bin",
@@ -342,7 +342,7 @@ def test_the_recorded_file_does_not_contain_the_credentials(tmp_path: Path) -> N
     """It lives in a volume reviewers are invited to keep, so it has to be safe to keep."""
     shell = shutil.which("sh")
     assert shell
-    subprocess.run(  # noqa: S603 -- resolved interpreter, fixed argv, no shell
+    subprocess.run(  # noqa: S603 (resolved interpreter, fixed argv, no shell)
         [shell, INIT_SCRIPT.as_posix()],
         env={
             "PATH": "/usr/bin:/bin",

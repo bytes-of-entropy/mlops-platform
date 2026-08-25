@@ -2,7 +2,7 @@
 # test asserts the two do not drift.
 
 # --project-directory is not decoration. Without it, compose takes the project directory from
-# the directory of the first -f file, which is compose/ -- so the default .env lookup becomes
+# the directory of the first -f file, which is compose/, so the default .env lookup becomes
 # compose/.env and every relative bind mount resolves under compose/ too. The .env then goes
 # unread while sitting in plain sight, and ./postgres/init resolves to a path that does not
 # exist, which Docker creates as an empty directory rather than refusing. Anchoring the project
@@ -70,13 +70,13 @@ hooks:
 check: lint hooks test
 
 # A runbook step is a hope; a prerequisite is a guarantee. Every failure this repository has
-# shipped so far was a stack that started and was wrong -- an unread .env, an init directory
+# shipped so far was a stack that started and was wrong: an unread .env, an init directory
 # mounted from the wrong place, a login the image was never told to create. The doctor is that
 # knowledge as a program, and it runs before the two targets that would otherwise hide it.
 doctor:
 	$(PY) -m preflight
 
-# `up` builds too, so this target is not a prerequisite of anything -- it exists so a build can be
+# `up` builds too, so this target is not a prerequisite of anything; it exists so a build can be
 # paid for outside a timed window. The integration tier bounds every compose call it makes, and a
 # cold build plus a cold pull is minutes of that budget spent on work that is identical every time.
 build:

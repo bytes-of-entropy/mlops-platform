@@ -1,7 +1,7 @@
 """Something crosses the spine: Airflow parses a DAG, runs it, and the run lands in Postgres.
 
 This is the other half of the M0 gate. The idempotency tier proves the stack comes up the same way
-twice; this proves the parts of it can reach each other, which no healthcheck can say -- a
+twice; this proves the parts of it can reach each other, which no healthcheck can say, since a
 healthcheck is a service answering its own port.
 
 The crossing is asserted at both ends rather than the near one. MLflow's API reporting a finished
@@ -11,7 +11,7 @@ the next restart. Either claim alone leaves the more expensive half of the path 
 
 It runs the DAG synchronously with `airflow dags test`. A manual trigger plus a poll would also
 exercise the scheduler noticing new work, and would make the assertion depend on how long that takes
-on the machine of the day -- a test that fails at a slow moment reports a broken spine. The
+on the machine of the day: a test that fails at a slow moment reports a broken spine. The
 scheduler's liveness is already gated on by `up --wait`, so the flaky version buys almost nothing.
 
 The whole profile comes up once for the module. Bringing 20 GB of stack up per test would be honest
@@ -63,7 +63,7 @@ print(json.dumps(json.load(urllib.request.urlopen(request))))
 
 #: -tA: no alignment, no header, so each output line is a value and nothing else. The user and
 #: database come from the container's own environment, which keeps a credential out of this argv,
-#: and the statement takes no parameters -- the run id is compared in Python rather than
+#: and the statement takes no parameters; the run id is compared in Python rather than
 #: interpolated into SQL. Bounded, because a query that grows with the table is a query that
 #: eventually returns more than anyone wanted to read.
 RECENT_RUN_ROWS = (
@@ -103,7 +103,7 @@ def test_the_scheduler_registers_the_dag_without_an_import_error(running_stack: 
     """A DAG with a bad import is not a failing DAG, it is an absent one.
 
     Airflow reports the traceback on a page nobody opens during a test run and carries on serving,
-    so the DAG the next test triggers would simply not be there -- and `dags test` would say
+    so the DAG the next test triggers would simply not be there, and `dags test` would say
     "does not exist" rather than naming the import that broke.
     """
     listed = running_stack.check(
@@ -151,6 +151,6 @@ def test_the_dag_run_reaches_mlflow_and_lands_in_postgres(running_stack: Stack) 
     persisted = {line.strip() for line in rows.splitlines() if line.strip()}
     assert run_id in persisted, (
         f"MLflow reports run {run_id}, and the twenty newest rows in the Postgres runs table are "
-        f"{sorted(persisted)} -- so the tracking server is not persisting where the compose file "
+        f"{sorted(persisted)}, so the tracking server is not persisting where the compose file "
         f"says it is"
     )

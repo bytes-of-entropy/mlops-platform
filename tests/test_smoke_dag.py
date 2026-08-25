@@ -2,13 +2,13 @@
 
 The DAG file is the one piece of Python in this repository that executes somewhere the suite
 cannot follow: inside a pinned image, imported by a scheduler, on a machine that has Docker. So
-everything checkable from the outside is checked here -- that it parses, that the name the
+everything checkable from the outside is checked here: that it parses, that the name the
 integration tier triggers is the name it declares, that the variable it reads is the variable
 compose sets, and that it imports nothing the image does not already contain.
 
 That last one is the rule worth having. `import mlflow` in this file would pass the formatter, pass
 the linter, pass review, and fail at task-run time inside a container whose image has no install
-step -- a dependency that exists only in the mind of whoever wrote the DAG. The check is a parse and
+step: a dependency that exists only in the mind of whoever wrote the DAG. The check is a parse and
 a name comparison, so it costs nothing and runs everywhere.
 """
 

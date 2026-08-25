@@ -1,14 +1,14 @@
 """Where compose resolves relative paths, asserted without a container runtime.
 
 Compose resolves the default ``.env`` and every relative bind mount against the *project
-directory*, and the project directory defaults to the directory of the first ``-f`` file --
+directory*, and the project directory defaults to the directory of the first ``-f`` file:
 ``compose/`` here, not the repository root. That single rule produced two defects at once:
 the root ``.env`` went unread while the README told a reviewer to create it there, and
 ``./postgres/init`` pointed at a path Docker creates as an empty directory rather than
 refusing, so the Postgres init SQL simply never ran and said nothing about it.
 
 The contract suite could not see either one, because parsing compose files as data is
-precisely what lets it run with no daemon installed -- and path resolution is the daemon's
+precisely what lets it run with no daemon installed, and path resolution is the daemon's
 half of the job. These tests close that hole from the data side: they check the flag that
 anchors the project directory, and they check that the paths the mounts name actually exist
 where the flag makes them point.
@@ -29,7 +29,7 @@ PROJECT_DIRECTORY_FLAG = "--project-directory"
 PROJECT_NAME_FLAG = "-p"
 
 #: One entry per place that builds a compose invocation. There are four: the Makefile, its
-#: PowerShell mirror, ``tests/stackops.py``, and the doctor's one-shot probe -- each of them a
+#: PowerShell mirror, ``tests/stackops.py``, and the doctor's one-shot probe, each of them a
 #: separate opportunity to resolve paths differently from the other three, so this list is also
 #: the inventory. Adding an invocation without adding it here leaves it unchecked. The
 #: integration tier counts once because both stacks it starts are built from one base.
@@ -92,7 +92,7 @@ def test_the_integration_suite_invokes_compose_the_way_the_entrypoints_do() -> N
 
 
 def test_the_integration_suite_starts_its_own_project_not_the_developers() -> None:
-    """Same files, same project directory, different project name -- and the name matters.
+    """Same files, same project directory, different project name, and the name matters.
 
     Compose names containers and volumes after the project, and the project defaults to the
     directory basename, which is identical in every clone. Sharing it makes one stack wear two
@@ -120,7 +120,7 @@ def test_the_doctor_invokes_compose_the_way_the_entrypoints_do() -> None:
     """The doctor reads a volume through a one-shot container, so it resolves paths too.
 
     It borrows the Postgres service rather than naming an image and a volume of its own, which is
-    what keeps the pin and the project name in one place -- but borrowing only works if compose
+    what keeps the pin and the project name in one place, but borrowing only works if compose
     reads the same project directory. Anchored somewhere else it would look inside a volume named
     after compose/, find nothing, and report a fresh machine to someone holding a full one.
     """
@@ -155,7 +155,7 @@ def test_no_relative_bind_mount_would_also_resolve_under_the_compose_directory(
     """Keeps the flag load-bearing rather than merely present.
 
     If these paths existed under ``compose/`` as well, both readings would work and the flag
-    could be dropped without anything failing -- which is how a constraint stops constraining.
+    could be dropped without anything failing, which is how a constraint stops constraining.
     """
     compose_directory = REPO_ROOT / "compose"
     for name, host in relative_bind_mounts(services):

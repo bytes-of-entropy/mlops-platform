@@ -1,7 +1,7 @@
 """The smoke DAG read as text, because it cannot be imported here.
 
 It imports Airflow, which is inside a pinned image and deliberately not in this repository's dev
-dependencies -- adding it would mean installing a scheduler to check a file. So both tiers read the
+dependencies; adding it would mean installing a scheduler to check a file. So both tiers read the
 file instead: the contract tier to assert what it declares, and the integration tier to learn the
 dag_id it has to trigger. One reader, so a rename cannot mean two different things in two places.
 """

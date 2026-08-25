@@ -7,21 +7,21 @@ one machine, and the Kubernetes and Terraform footprint they run on in the cloud
 **Status: M0, not closed.** The compose spine, its contract suite, a preflight that refuses a start
 which would come up healthy and wrong, and a smoke DAG that crosses the spine end to end are all in.
 The stack has now been started for the first time, on the build machine, and that first start found
-two defects nothing here could have caught by reading — both of them claims about what is *inside* a
+two defects nothing here could have caught by reading. Both were claims about what is *inside* a
 pinned image ([`docs/decisions/011`](docs/decisions/011-what-is-inside-an-image-is-a-claim.md)). Both
 are fixed and neither is fixed by a rule that only reads the compose file. The first run of the
 integration tier then found a third, this one in a test rather than in the stack: fixing the second had
 silently moved a supply-chain check off the pin it was there to watch
 ([`docs/decisions/012`](docs/decisions/012-a-built-tag-is-not-a-registry-fact.md)). M0 closes when the
-integration tier is green end to end, which it is not yet. Hardened images (M1) — multi-stage, non-root,
-an SBOM and a scan step in CI — then Helm charts and Terraform (M2) are next; the one image built here is
+integration tier is green end to end, which it is not yet. Hardened images (M1: multi-stage, non-root,
+an SBOM and a scan step in CI), then Helm charts and Terraform (M2), are next; the one image built here is
 the minimum that lets M0 start, not the beginning of that work. Model registry, drift detection and
-canary rollout are deliberately deferred — see
+canary rollout are deliberately deferred; see
 [`docs/decisions/001`](docs/decisions/001-defer-registry-drift-canary.md).
 
 ## The decision this enables
 
-Every later number in this portfolio — a Spark tuning figure, an evaluation metric, a cost report —
+Every later number in this portfolio (a Spark tuning figure, an evaluation metric, a cost report)
 depends on the environment that produced it being the same environment twice. This repository is that
 environment, and its claims about itself are asserted by tests rather than described in prose.
 
@@ -42,7 +42,7 @@ make ps
 | MLflow | http://localhost:5000 | A hosted tracking server |
 | Airflow (full profile) | http://localhost:8082 | A managed scheduler |
 
-`make up` starts the full spine — two Spark workers and Airflow — and wants roughly 20 GB.
+`make up` starts the full spine, two Spark workers and Airflow included, and wants roughly 20 GB.
 `make down` stops everything and **keeps** your volumes; `make clean` removes them; `make reset` is
 `clean` then `up`, for the one case where discarding the volume is the fix rather than an accident.
 
@@ -59,29 +59,29 @@ other two together. Postgres reads `POSTGRES_USER` and `POSTGRES_PASSWORD` only 
 empty volume, so a credential changed after the first `up` leaves the old role in place, and the stack
 refuses with a message that appears only inside a container's log. The volume now records a salted
 digest of what built it, the doctor compares that against your current values, and the answer when
-they differ is `make reset` — which destroys the volume, which is why it is your decision and not the
+they differ is `make reset`. That destroys the volume, which is why it is your decision and not the
 doctor's. A volume that predates the fingerprint reports that it cannot tell, rather than guessing,
 and never blocks a start:
 [`docs/decisions/009`](docs/decisions/009-a-volume-records-what-it-was-built-with.md).
 
 Airflow's login is `admin` with the `AIRFLOW_ADMIN_PASSWORD` you generated. The username is pinned
-rather than chosen — [`docs/decisions/008`](docs/decisions/008-airflow-creates-the-admin-it-is-given.md)
+rather than chosen; [`docs/decisions/008`](docs/decisions/008-airflow-creates-the-admin-it-is-given.md)
 explains why a configurable one produced an account nobody could log into.
 
 **On the pinned tags.** They are exact by policy, and the first `make up` on a machine that has
 never pulled them is also the first verification that each tag exists. If one does not resolve, the
-fix is a deliberate bump with the new tag committed — not a switch to a floating tag.
+fix is a deliberate bump with the new tag committed, not a switch to a floating tag.
 
 This section is the ten-minute path. [`docs/setup.md`](docs/setup.md) is the long form, and the only
 other document needed: how the code arrives and where it should live, prerequisites and the five
 things deliberately not installed, which credentials can still be changed later and which cannot, the
 build-before-anything-timed order the integration tier needs, the output each command should produce,
-and a troubleshooting section keyed by the symptom rather than by the subsystem — because the
+and a troubleshooting section keyed by the symptom rather than by the subsystem, because the
 recurring lesson here is that the subsystem a failure names is often not the one at fault.
 
 ## Architecture
 
-[`docs/architecture.md`](docs/architecture.md) — drawn before the code it describes.
+[`docs/architecture.md`](docs/architecture.md), drawn before the code it describes.
 
 ## Results: what the tests actually assert
 
@@ -91,7 +91,7 @@ The contract suite runs with no container runtime installed, which is what makes
 |---|---|
 | Every image is pinned to an exact tag | `test_every_image_is_pinned` |
 | No image comes from a namespace published as a frozen archive | `test_no_image_comes_from_an_archived_namespace` |
-| Every pinned image still resolves in a registry — the tags this spine pulls, plus the base of the one it builds | `test_every_pinned_image_still_resolves` (needs a runtime) |
+| Every pinned image still resolves in a registry: the tags this spine pulls, plus the base of the one it builds | `test_every_pinned_image_still_resolves` (needs a runtime) |
 | Every image is either pulled from a registry or built here, and none is treated as both | `test_every_service_image_is_either_pulled_or_built` |
 | Every service has a healthcheck, and dependencies wait for health rather than start | `test_every_service_declares_a_healthcheck`, `test_dependencies_wait_for_health_not_start` |
 | A healthcheck only names a binary its own image is known to provide | `test_a_healthcheck_only_names_a_binary_its_image_provides` |
@@ -104,7 +104,7 @@ The contract suite runs with no container runtime installed, which is what makes
 | A pinned tool is the same version everywhere it is named | `test_every_hook_that_mirrors_a_pinned_tool_runs_the_pinned_version`, `test_the_interpreter_running_this_suite_has_the_pinned_ruff` |
 | The committed hook config is something that actually runs | `test_both_entrypoints_install_the_git_hooks_during_setup`, `test_the_gate_runs_the_hooks_in_both_entrypoints_and_in_ci` |
 | `down` keeps volumes and only `clean` removes them | `test_down_keeps_volumes_and_clean_removes_them` |
-| Every place that invokes compose — both entrypoints, the integration tier and the preflight — resolves `.env` and bind mounts against the repository root | `test_the_makefile_anchors_the_project_directory_in_every_invocation`, `test_the_powershell_mirror_anchors_it_too`, `test_the_integration_suite_invokes_compose_the_way_the_entrypoints_do`, `test_the_doctor_invokes_compose_the_way_the_entrypoints_do` |
+| Every place that invokes compose (both entrypoints, the integration tier and the preflight) resolves `.env` and bind mounts against the repository root | `test_the_makefile_anchors_the_project_directory_in_every_invocation`, `test_the_powershell_mirror_anchors_it_too`, `test_the_integration_suite_invokes_compose_the_way_the_entrypoints_do`, `test_the_doctor_invokes_compose_the_way_the_entrypoints_do` |
 | Every relative bind mount names a path that exists, and one that `compose/` cannot also satisfy | `test_every_relative_bind_mount_exists_under_the_repository_root`, `test_no_relative_bind_mount_would_also_resolve_under_the_compose_directory` |
 | `down` then `up` reaches the same healthy set, twice, with state intact | `tests/test_idempotency.py` (needs a runtime and the local credentials) |
 | A missing precondition is named in the skip rather than reported as a failure of what it blocks | `tests/test_docker_probe.py`, `test_the_reason_names_each_missing_variable_and_what_to_do_about_it` |
@@ -125,7 +125,7 @@ The contract suite runs with no container runtime installed, which is what makes
 ## The hard problem
 
 Idempotency is the one property a local stack quietly lacks. `make up` twice, or `make down && make
-up`, has to land in the same place — otherwise every downstream measurement is conditional on how many
+up`, has to land in the same place; otherwise every downstream measurement is conditional on how many
 times the author happened to restart something.
 
 Three specific ways it fails are designed out here rather than discovered later:
@@ -140,62 +140,62 @@ Three specific ways it fails are designed out here rather than discovered later:
   destroying the evidence. `make down` keeps volumes and `make clean` removes them, and a test fails
   if the two are ever collapsed into one.
 
-One was not designed out — it was found by reading, before the first `up` on any machine. Compose
+One was not designed out. It was found by reading, before the first `up` on any machine. Compose
 resolves the default `.env` and every relative bind mount against the project directory, which
 defaults to the folder holding the first `-f` file rather than the working directory, so
 `./postgres/init` pointed inside `compose/`. Docker creates a missing host path as an empty directory
 instead of refusing, which means Postgres would have started, reported healthy, and never run its
-init SQL — a failure the entire M0 gate would have passed over in silence. Every invocation now
+init SQL, a failure the entire M0 gate would have passed over in silence. Every invocation now
 passes `--project-directory .`, and the reasoning is in
 [`docs/decisions/004`](docs/decisions/004-anchor-the-compose-project-directory.md).
 
 The next one came from outside the repository entirely. The first `up` on the build machine failed
-with `failed to resolve reference "docker.io/bitnami/spark:3.5.1": not found` — an exact pin, on an
+with `failed to resolve reference "docker.io/bitnami/spark:3.5.1": not found`: an exact pin, on an
 unchanged file, that no longer resolved because its publisher had deleted the whole namespace and
 moved versioned tags to an explicitly unmaintained archive. The pin had done its job: it made the
 build reproducible. It had never been able to make the image *available*, and a digest pin would have
 died with the repository just the same, because a digest names content inside a repository and the
 repository is what was withdrawn. Reproducibility and availability are separate properties needing
 separate defences, and the only defence against withdrawal is a different publisher or a registry you
-control. Spark now runs on the ASF's own `apache/spark:3.5.1-python3`, two tests were added — one
-refusing any archived namespace, one asking a registry whether every pin still resolves — and the
+control. Spark now runs on the ASF's own `apache/spark:3.5.1-python3`, two tests were added (one
+refusing any archived namespace, one asking a registry whether every pin still resolves), and the
 reasoning, including why the frozen copy of the working tag was the wrong fix, is in
 [`docs/decisions/005`](docs/decisions/005-migrate-off-the-withdrawn-spark-image.md).
 
 The one after that came from the order someone did things in. Install Docker, then run the gate, and
-the three idempotency tests failed — not because the cycle is broken, but because `.env` did not
+the three idempotency tests failed, not because the cycle is broken, but because `.env` did not
 exist yet, so compose refused to render the file and the assertion that reported it says `compose up
 failed` under a test name that claims idempotency is the thing at fault. The pattern to copy was
 already one layer down: the Docker probe exists because installed is not the same as usable, and
 credentials are the same shape one step along. Those tests now gate on both preconditions and skip
-naming the variables that are unset, read out of `.env.example` rather than restated in test code —
-[`docs/decisions/006`](docs/decisions/006-preconditions-skip-by-name.md), including why fixing the
+naming the variables that are unset, read out of `.env.example` rather than restated in test code.
+See [`docs/decisions/006`](docs/decisions/006-preconditions-skip-by-name.md), including why fixing the
 documented step order instead would have left a test lying about its own subject.
 
 And the one after that was hiding in the design rather than in the order. With `.env` filled in, the
 stack still refused, and the reason was not in compose's output: it was a line in the Postgres
 container's log saying the role named in `.env` does not exist. The `postgres` image reads
 `POSTGRES_USER` only while initialising an empty data directory, so the credentials in the volume are
-the ones the *first* `up` on that machine created, and `make down` keeps that volume on purpose —
+the ones the *first* `up` on that machine created, and `make down` keeps that volume on purpose,
 because a `down` that removed it would make idempotency indistinguishable from starting over. The
 same property, read from two sides. Re-cloning does not help either: the project name comes from the
 directory basename, so a new clone reuses the same volume. The fix for the state is `make clean`; the
 fix for the *repository* is that a failed compose call now gathers `compose ps` and the service logs
 into the assertion, because a report built from the failing command's own streams cannot contain a
-diagnosis that only ever appears in a container's log —
+diagnosis that only ever appears in a container's log:
 [`docs/decisions/007`](docs/decisions/007-a-kept-volume-pins-the-first-runs-credentials.md).
 
 The next one was not a failure at all, which is why it took so long to be seen. Everything above
-asserts one service at a time, and a healthcheck is a service answering its own port — seven passing
+asserts one service at a time, and a healthcheck is a service answering its own port, and seven passing
 ones are seven services that are each alive, and say nothing about whether any two of them can reach
 each other. `airflow/dags/m0_smoke.py` is the smallest thing that does: one task creates an MLflow
-run, logs a param and a metric, and marks it finished, which crosses four boundaries in one artefact
-— Airflow parsing the file, Airflow executing it, MLflow accepting the writes, Postgres holding the
+run, logs a param and a metric, and marks it finished, which crosses four boundaries in one artefact:
+Airflow parsing the file, Airflow executing it, MLflow accepting the writes, and Postgres holding the
 row. It is asserted at the far end as well as the near one, because MLflow's own API reporting a
 finished run proves only the half that was cheap to prove; the same run id turning up as a row in
 Postgres is what proves MLflow reached its backend store rather than answering from memory until the
-next restart. It does not touch MinIO — an artefact write goes through the artifact store and needs an
-S3 client the pinned image does not ship — and stating that is the point, because a smoke test that
+next restart. It does not touch MinIO: an artefact write goes through the artifact store and needs an
+S3 client the pinned image does not ship. Stating that is the point, because a smoke test that
 overstates its reach turns an unknown into a false assurance:
 [`docs/decisions/010`](docs/decisions/010-a-smoke-dag-closes-m0.md).
 
@@ -203,29 +203,29 @@ The last two came from the first `up` that got far enough to have a running stac
 are the same mistake twice. The doctor passed all three checks, six of seven services reported healthy,
 and MLflow never did. Two defects were behind it, and both are claims about what is inside a pinned
 image. Its healthcheck ran `curl`, which the compose file elsewhere already notes an image does not owe
-you — naming a binary the image lacks costs the whole `--wait` timeout and then reports a broken
+you: naming a binary the image lacks costs the whole `--wait` timeout and then reports a broken
 *service*, so the failure names the wrong thing. Underneath that, `mlflow server` with a Postgres
 backend and an S3 artifact root needs a DBAPI driver and an S3 client, and the published MLflow image
 ships neither, so the process exited at import. Every rule in the contract suite passed on a container
-that could not start, because every one of them describes the compose *file* — image pinned, credential
-interpolated, healthcheck declared, dependency gated on health, volume named, mount read-only — and none
+that could not start, because every one of them describes the compose *file*: image pinned, credential
+interpolated, healthcheck declared, dependency gated on health, volume named, mount read-only. None
 of them describes image *contents*. The healthchecks now run the interpreter, which both images are
 guaranteed to have by construction rather than by hope; MLflow is built from a two-line Dockerfile that
 adds the two packages, which is the first built image here and keeps its pin in the `FROM`; and two new
-rules make the class hard to reintroduce — a healthcheck may only name a binary its image is recorded as
+rules make the class hard to reintroduce: a healthcheck may only name a binary its image is recorded as
 providing, and a built service still declares a pinned tag with a pinned base behind it:
 [`docs/decisions/011`](docs/decisions/011-what-is-inside-an-image-is-a-claim.md).
 
 The one after those was mine rather than an image's, and it arrived from the only place that could
 find it: the tier itself, on the first run that reached that far. `test_every_pinned_image_still_resolves`
 asks a registry about every `image` key in the compose file, which was exactly right until the fix
-above added a service that is *built* here and — deliberately, because that is the tag `ps` reports —
+above added a service that is *built* here and (deliberately, because that is the tag `ps` reports)
 kept an `image` key beside its `build`. So the suite asked a registry about a tag this repository
 produces, got exit code 1, and reported a withdrawn pin that nobody had withdrawn. The false alarm was
 the visible half. The invisible half is worse: the pin that genuinely could be withdrawn,
 `ghcr.io/mlflow/mlflow:v2.13.0`, stopped being probed the moment that `image` key changed, and nothing
 said so. A test whose input set is derived from configuration can have its premise revoked by an edit
-to that configuration, and it will keep passing — or fail for the wrong reason — with no edit to the
+to that configuration, and it will keep passing (or fail for the wrong reason) with no edit to the
 test. The module now sorts each `image` key by whether its service declares a `build` and probes the
 pulled tags plus the `FROM` of the built one, and a third test asserts the two sets account for every
 key between them, so a tag can move from one to the other but cannot fall out of both:
@@ -240,7 +240,7 @@ runtime, and the M0 gate does not pass until both files are green on the build m
 defects above were found by starting the stack by hand, one step short of that tier running; the third
 was found by the tier running and failing, which is the first thing it has ever reported and is already
 one more than reading could have produced. The
-contract suite below them is what runs everywhere, and it is green — including the rule that a DAG may
+contract suite below them is what runs everywhere, and it is green, including the rule that a DAG may
 import Airflow and the standard library and nothing else, because `import mlflow` in a DAG passes the
 formatter, the linter and review, and then fails at task-run time inside an image that has no install
 step. That rule and the two new ones are the same rule aimed at different files: what a pinned image
@@ -271,20 +271,20 @@ different things. There are twenty-four Python files; the formatter also reads t
 files, where it formats `python`-fenced code blocks and leaves prose alone. A code sample in this
 repository's documentation is therefore held to the same style as the code, which is the intended
 behaviour rather than a side effect worth suppressing. The linter's own file count is different again
-and neither is wrong: `ruff check` lints Python only, so it reads twenty-five paths — the twenty-four
+and neither is wrong: `ruff check` lints Python only, so it reads twenty-five paths: the twenty-four
 modules plus `pyproject.toml`, which it reads for its own configuration.
 
 The one Python file mypy does not check is the DAG. It imports Airflow, which lives in a pinned image
 rather than in these dev dependencies, so a type check here would report the framework as missing
-rather than report anything about the module — and installing a scheduler in order to check a file is a
+rather than report anything about the module, and installing a scheduler in order to check a file is a
 worse trade than reading it. What can be established without the framework is established by reading:
 the suite parses the DAG with `ast` and asserts what it declares.
 
-The eleven skips are the integration tier: three idempotency tests, five image-resolution checks —
-one per registry reference, meaning the four tags the spine pulls plus the base the one built image
-comes from — and three that need the full profile running to exercise the smoke DAG. Every skip
+The eleven skips are the integration tier: three idempotency tests, five image-resolution checks
+(one per registry reference, meaning the four tags the spine pulls plus the base the one built image
+comes from), and three that need the full profile running to exercise the smoke DAG. Every skip
 names the precondition that is missing rather than the test that could not run, and the reasons
-distinguish cases a coarser check would merge — Docker not installed from Docker installed but not
+distinguish cases a coarser check would merge: Docker not installed from Docker installed but not
 running, and either of those from a machine whose `.env` has not been filled in yet. "Install Docker",
 "start Docker" and "write your credentials" are three different instructions, and a probe that only
 checks whether the binary exists gives the wrong one.

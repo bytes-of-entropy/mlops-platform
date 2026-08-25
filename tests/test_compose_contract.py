@@ -69,7 +69,7 @@ def test_a_healthcheck_only_names_a_binary_its_image_provides(
     Naming a binary the image does not ship costs the whole `--wait` timeout and then reports a
     broken service, which is the most expensive way this file can be wrong: the failure names the
     wrong thing, so it gets read as a bug in whatever that service does rather than as a typo in
-    one line of YAML. Same shape as the DAG import rule -- a dependency that exists only in the
+    one line of YAML. Same shape as the DAG import rule: a dependency that exists only in the
     mind of whoever wrote the file.
     """
     for name, service in services.items():
@@ -97,7 +97,7 @@ def test_a_built_image_still_declares_a_pinned_tag_and_a_pinned_base(
     A service with `build` and no `image` gets a tag compose invents, which the pin check above
     cannot see and an operator reading `ps` cannot recognise. And the reproducibility claim moves
     from the compose file into the Dockerfile, so the `FROM` has to be pinned for the same reason
-    the `image` keys are -- otherwise the one image this repository builds is the one image it
+    the `image` keys are; otherwise the one image this repository builds is the one image it
     cannot rebuild identically.
     """
     for name, service in services.items():
@@ -247,8 +247,8 @@ def test_a_credential_the_image_was_never_told_to_use_is_not_configuration(
 ) -> None:
     """Interpolating a credential proves the file reads it, not that the image acts on it.
 
-    Both existing checks on .env.example pass in this case -- the variable is declared and
-    it is interpolated -- so the gap is one level deeper than either of them looks. What
+    Both existing checks on .env.example pass in this case: the variable is declared and
+    it is interpolated, so the gap is one level deeper than either of them looks. What
     fails without this rule is the login itself, on a machine nobody is watching.
     """
     for name, service in services.items():

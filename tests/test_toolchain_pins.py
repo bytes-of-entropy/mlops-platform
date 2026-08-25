@@ -1,8 +1,8 @@
 """A pinned tool version must be the same version in every place that names one.
 
 Pinning buys reproducibility only if the pin is single-valued. Ruff's version is named in three
-places -- the dev extra that installs it, the pre-commit rev that runs it on commit, and the
-environment actually executing this suite -- and none of the three reads the others. A bump that
+places: the dev extra that installs it, the pre-commit rev that runs it on commit, and the
+environment actually executing this suite, and none of the three reads the others. A bump that
 updates one of them produces a hook that reformats what the gate then rejects, or a green local run
 against a version CI does not install.
 
@@ -25,7 +25,7 @@ PRE_COMMIT = REPO_ROOT / ".pre-commit-config.yaml"
 
 #: Hook repositories whose ``rev`` is a release of a tool this project also installs from PyPI, and
 #: the PyPI name of that tool. A hook repository absent from this mapping pins something with no
-#: PyPI counterpart -- ``pre-commit-hooks`` is the example -- and has nothing to agree with.
+#: PyPI counterpart (``pre-commit-hooks`` is the example) and has nothing to agree with.
 HOOK_REPO_TO_DISTRIBUTION = {
     "https://github.com/astral-sh/ruff-pre-commit": "ruff",
     "https://github.com/pre-commit/mirrors-mypy": "mypy",
@@ -77,7 +77,7 @@ def test_the_interpreter_running_this_suite_has_the_pinned_ruff() -> None:
     """Catches the stale virtual environment, which passes every other check in the gate.
 
     A venv created before a bump keeps running the old ruff. Its formatting differs from the pinned
-    version's, so the local gate goes green on a style CI will reject -- and the failure surfaces as
+    version's, so the local gate goes green on a style CI will reject, and the failure surfaces as
     a formatting diff in CI with no local reproduction, which is the expensive way to find it.
     """
     # Fixed argv, this interpreter, no shell. No `noqa` for S603: this version of ruff does not

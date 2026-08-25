@@ -1,4 +1,4 @@
-# 012 — Probe the base a built image comes from, not the tag it is built into
+# 012: Probe the base a built image comes from, not the tag it is built into
 
 - **Date:** 2026-08-23
 - **Status:** accepted
@@ -9,7 +9,7 @@
 
 `test_every_pinned_image_still_resolves` asks a registry about every `image` key in the compose file.
 That was exactly right while every image was pulled. Decision 011 added a built one, and the built
-service keeps an `image` key on purpose — the tag is what `ps` and `inspect` report — so the tag
+service keeps an `image` key on purpose (the tag is what `ps` and `inspect` report), so the tag
 `mlops-platform/mlflow:2.13.0` silently joined the set of things a registry gets asked about. No
 registry has heard of it, because this repository produces it. `docker manifest inspect` returned exit
 code 1 and the suite reported a withdrawn pin, on the first run of the tier that got far enough to
@@ -19,8 +19,8 @@ Two things went wrong and only one of them is the visible failure. The visible o
 naming an upstream problem that does not exist. The other is a silent loss of coverage: the pin that
 *was* being checked, `ghcr.io/mlflow/mlflow:v2.13.0`, stopped being checked the moment the service's
 `image` key changed, and nothing said so. A test whose input set is derived from the configuration can
-have its premise revoked by an edit to that configuration, and it will keep passing — or fail for the
-wrong reason — without anyone editing the test.
+have its premise revoked by an edit to that configuration, and it will keep passing, or fail for the
+wrong reason, without anyone editing the test.
 
 ## Decision
 
@@ -43,7 +43,7 @@ changes answer with no change to the code is worse than no test. The build is pr
 starting at all, which is the assertion the integration tier already makes.
 
 Also rejected: **excluding built services from the module entirely.** Cheapest to write, and it would
-have left the base image unprobed — turning a false alarm into a silent gap, which is the worse of the
+have left the base image unprobed, turning a false alarm into a silent gap, which is the worse of the
 two failures.
 
 ## Prediction (recorded before the evidence)
@@ -56,13 +56,13 @@ second service is ever given a `build`, before anyone notices the coverage moved
 
 The failure itself: `AssertionError: resolving mlops-platform/mlflow:2.13.0 failed with exit code 1`,
 on the build machine, with every other assertion in the tier passing. Locally, the two sets now read
-four pulled tags and one base, five references in total — the same number the module probed before
+four pulled tags and one base, five references in total, the same number the module probed before
 decision 011, and no longer the same five.
 
 ## What would change my mind
 
 A registry this project actually publishes to. If the built image is ever pushed, its tag becomes a
-registry fact like any other and belongs back in the probed set — at which point the interesting
+registry fact like any other and belongs back in the probed set, at which point the interesting
 question is the reverse one, whether the pushed tag matches what the Dockerfile would produce today,
 and neither of these tests answers that.
 
@@ -74,4 +74,4 @@ when that stops being true.
 
 Leaves one gap named rather than hidden: nothing asserts that the locally tagged image was built from
 the Dockerfile currently on disk. A stale tag from an earlier build satisfies compose, and only a
-rebuild — which both `up` targets now force with `--build` — makes them agree.
+rebuild, which both `up` targets now force with `--build`, makes them agree.

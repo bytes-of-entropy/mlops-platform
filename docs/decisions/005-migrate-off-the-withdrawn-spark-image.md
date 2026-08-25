@@ -1,4 +1,4 @@
-# 005 — Spark runs on the Apache image, and only inside a container
+# 005: Spark runs on the Apache image, and only inside a container
 
 - **Date:** 2026-08-23
 - **Status:** accepted
@@ -16,7 +16,7 @@ namespace that its own notice describes as receiving no further updates or suppo
 suitable only for temporary migration.
 
 The interesting part is what the pin did and did not buy. This repository pins every tag
-deliberately, and the pin worked exactly as designed — it made the build reproducible. It did
+deliberately, and the pin worked exactly as designed: it made the build reproducible. It did
 not make the image *available*, and a digest pin would have been no better: a digest names
 content inside a repository, and the repository is what was deleted. Reproducibility and
 availability are separate properties with separate defences. Pinning defends against drift; the
@@ -33,12 +33,12 @@ runs Spark. There are three, and they are not interchangeable.
 
 PySpark refuses a driver/executor minor-version mismatch outright, so a host driver on 3.12
 talking to a 3.10 executor is not a warning, it is a hard failure. That rules out the shape
-where the host venv runs PySpark against these containers — not because of a tooling gap, but
+where the host venv runs PySpark against these containers, not because of a tooling gap, but
 because two of the three rows above cannot move at all.
 
 ## Decision
 
-All three Spark services move to `apache/spark:3.5.1-python3` — the ASF-published image, the
+All three Spark services move to `apache/spark:3.5.1-python3`, the ASF-published image, the
 same build as the Docker Official `spark:*` tags. Spark stays entirely inside containers: no
 host `pyspark`, no host JDK, no `winutils.exe`/`hadoop.dll`, and the venvs stay on 3.12.10.
 
@@ -103,7 +103,7 @@ skips from the parametrized manifest check.
 
 I expect `./make.ps1 up-quickstart` on the build machine to reach healthy on all four quickstart
 services, and I expect the worker to report 1 core and 1 GiB in the master UI at
-`http://localhost:8080` — the same numbers the old overlay produced, from the same two variables.
+`http://localhost:8080`, the same numbers the old overlay produced, from the same two variables.
 
 I expect the healthcheck to be the thing most likely to be wrong, because it is the only part of
 this change whose correctness depends on the image's *contents* rather than on documented Spark
@@ -133,8 +133,8 @@ If the ASF namespace turns out to lag Spark releases badly enough that a securit
 unavailable as an image for weeks, then publishing a thin local image on top of a maintained JDK
 base becomes the honest answer, and the maintenance obligation is the price.
 
-If `spark-class` proves to need a wrapper the old image's entrypoint was providing — signal
-handling, log routing, a writable log directory — then the command grows a small committed
+If `spark-class` proves to need a wrapper the old image's entrypoint was providing (signal
+handling, log routing, a writable log directory), then the command grows a small committed
 entrypoint script rather than more inline arguments.
 
 ## Consequences
@@ -147,7 +147,7 @@ daemon, which is why the comment says so.
 The image's Python is fixed at 3.10 for as long as its base is jammy, so any Spark job in this
 repository executes on 3.10 no matter what the venvs run. That is fine while every Spark
 entrypoint is a container, and it is precisely what stops being fine the moment something tries
-to submit from the host — a constraint worth stating out loud before the ETL component arrives.
+to submit from the host, a constraint worth stating out loud before the ETL component arrives.
 
 The new supply test is the first in this repository that can fail because of something nobody
 working in it did. That is deliberate: an unavailable dependency is a real defect in a repository

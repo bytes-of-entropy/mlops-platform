@@ -2,7 +2,7 @@
 
 The two things in this repository that cannot be established by reading files. Both are split into
 a pure classifier and a thin shell-out, so the interesting half is testable on a machine with no
-daemon -- which is every machine this code is written on.
+daemon, which is every machine this code is written on.
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ def probe_docker() -> str:
     """Whether Docker can actually run something, which is not the same as being installed.
 
     ``shutil.which`` finds the client. The client is a thin thing that talks to a daemon over a
-    socket, and on a developer machine the usual state is installed-but-not-running -- so a
+    socket, and on a developer machine the usual state is installed-but-not-running, so a
     presence check marks the integration tests as runnable and they then fail on a connection
     error, which reads like a broken repository rather than a stopped service.
 
@@ -58,7 +58,7 @@ def probe_docker() -> str:
     if binary is None:
         return classify_docker_state(None, None)
     try:
-        completed = subprocess.run(  # noqa: S603 -- fixed argv, resolved path, no shell
+        completed = subprocess.run(  # noqa: S603 (fixed argv, resolved path, no shell)
             [binary, "info", "--format", "{{.ServerVersion}}"],
             capture_output=True,
             timeout=DAEMON_PROBE_TIMEOUT_SECONDS,
@@ -120,7 +120,7 @@ def parse_volume_report(returncode: int, stdout: str, stderr: str) -> VolumeStat
     """Read the one-shot container's report.
 
     Scans for a marker line rather than reading the first one, because compose narrates its own
-    work -- pulling, creating a volume, creating a container -- and which stream it narrates on
+    work (pulling, creating a volume, creating a container) and which stream it narrates on
     varies by version.
     """
     if returncode != 0:
@@ -161,7 +161,7 @@ def read_postgres_volume() -> VolumeState:
         REPORT_SCRIPT,
     ]
     try:
-        completed = subprocess.run(  # noqa: S603 -- argv is built here, no shell, no input
+        completed = subprocess.run(  # noqa: S603 (argv is built here, no shell, no input)
             argv,
             cwd=REPO_ROOT,
             capture_output=True,

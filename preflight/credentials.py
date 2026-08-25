@@ -13,7 +13,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 #: Read only while an empty data directory is being initialised. Changing one of these against a
-#: volume that already exists changes nothing inside the volume -- the old value stays in force and
+#: volume that already exists changes nothing inside the volume; the old value stays in force and
 #: every client presenting the new one is refused.
 FIRST_INIT = "first-init"
 
@@ -62,7 +62,7 @@ READ_TIMING: Mapping[str, Credential] = {
     ),
     "AIRFLOW_FERNET_KEY": Credential(
         EVERY_START,
-        "read at every start, so the key can be replaced -- but connections and variables already "
+        "read at every start, so the key can be replaced, but connections and variables already "
         "encrypted with the old one become unreadable, which is a data loss rather than an error",
     ),
     "AIRFLOW_ADMIN_PASSWORD": Credential(
@@ -120,7 +120,7 @@ def missing_credentials(
     spine cannot be remembered in one place and forgotten in the other. Satisfied means a
     non-empty value in ``.env`` *or* in the process environment, because compose reads both and
     exporting the variables instead of writing them to a file is a supported choice rather than a
-    workaround -- a guard that only looked for the file would skip on a machine that was in fact
+    workaround: a guard that only looked for the file would skip on a machine that was in fact
     ready.
     """
     required = set(parse_env_pairs(example_text))

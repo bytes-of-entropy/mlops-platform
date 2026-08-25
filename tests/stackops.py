@@ -2,7 +2,7 @@
 
 Two integration modules now need a running stack and they need different ones: the idempotency
 cycle wants the capped quickstart, and the M0 smoke wants the full profile because that is the only
-one that includes Airflow. Different argv, same plumbing -- and a second copy of the plumbing would
+one that includes Airflow. Different argv, same plumbing, and a second copy of the plumbing would
 be a second chance to anchor the project directory somewhere other than the repository root, which
 is the defect ``docs/decisions/004`` exists for. So both invocations are built from one base here,
 and the inventory in ``test_compose_paths.py`` checks that base rather than chasing copies.
@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from tests.conftest import REPO_ROOT, describe_process
 
 #: The suite's own project name. Not cosmetic: compose derives the default from the directory
-#: basename, so without this the tier's containers and volumes are the ones `make up` created -- one
+#: basename, so without this the tier's containers and volumes are the ones `make up` created: one
 #: stack under two names, where either side's teardown lands on the other. A developer's kept
 #: volume would then decide whether the tier passes, and `make clean` in another window would delete
 #: state a running test case is mid-way through asserting. Naming a project is the only way to
@@ -34,7 +34,7 @@ TEST_PROJECT = "mlops-platform-tests"
 
 #: --project-directory, exactly as both entrypoints pass it. An integration suite that resolved
 #: `.env` and the bind mounts differently from `make up` would be testing a stack nobody runs.
-#: The project *name* is the one thing deliberately not shared -- it renames containers and volumes
+#: The project *name* is the one thing deliberately not shared; it renames containers and volumes
 #: and changes nothing about how the files are read.
 BASE = (
     "docker",
@@ -59,7 +59,7 @@ FULL = (*BASE, "--profile", "full")
 #:
 #: That is deliberately not a scan for a free port before starting. Between finding one free and
 #: binding it, anything on the machine can take it, which trades a collision that happens every
-#: time for one that happens sometimes -- and a test that fails sometimes is the worse defect.
+#: time for one that happens sometimes, and a test that fails sometimes is the worse defect.
 #: `docker compose -p mlops-platform-tests port <service> <container-port>` reports what was
 #: assigned, and `compose ps` prints the mappings, so the diagnostics already carry them.
 EPHEMERAL_PORTS = {
@@ -77,7 +77,7 @@ LOG_TAIL_LINES = 30
 
 
 def run(argv: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603 -- argv is built in this module, no shell, no input
+    return subprocess.run(  # noqa: S603 (argv is built in this module, no shell, no input)
         argv,
         cwd=REPO_ROOT,
         capture_output=True,
@@ -102,7 +102,7 @@ class Stack:
 
         A failed `up --wait` almost never says why: the reason is a container that started,
         logged its objection and went unhealthy. `role "x" does not exist` from a Postgres whose
-        volume was initialised under a different POSTGRES_USER is exactly that shape -- invisible
+        volume was initialised under a different POSTGRES_USER is exactly that shape: invisible
         in compose's own output, unmissable in the service log.
         """
         gathered: dict[str, str] = {}
@@ -154,6 +154,6 @@ class Stack:
 
         `-T` because there is no terminal in a test run, and `sh -lc` because the scripts here
         read variables the image itself put in the environment rather than values passed in from
-        outside -- which is what keeps credentials out of an argv this module builds.
+        outside, which is what keeps credentials out of an argv this module builds.
         """
         return self.check(label, "exec", "-T", service, "sh", "-lc", script).stdout

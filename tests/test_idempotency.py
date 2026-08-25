@@ -1,7 +1,7 @@
 """`make down && make up` must be repeatable, and repeatable twice.
 
 This is the integration half of the M0 gate. It needs two things the contract suite does
-not -- a container runtime and the local credentials -- and skips, naming which one is
+not (a container runtime and the local credentials) and skips, naming which one is
 absent, where either is missing. The contract suite next to it covers the properties that
 make idempotency possible; this covers whether it actually holds.
 

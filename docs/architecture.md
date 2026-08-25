@@ -44,5 +44,5 @@ Drawn before the code it describes, which is the point of drawing it.
 
 ## What is not here yet
 
-Images (M1), Helm charts (M2), Terraform (M2). Registry, drift and canary are deferred —
+Images (M1), Helm charts (M2), Terraform (M2). Registry, drift and canary are deferred; see
 `docs/decisions/001`.

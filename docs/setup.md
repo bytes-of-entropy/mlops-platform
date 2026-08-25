@@ -8,7 +8,7 @@ because that is where it is executed, and every one of them has a `make` equival
 Read once before starting: **nothing in section 6 has ever completed anywhere.** The gate in section 5
 is measured and reproducible. The integration tier has been started far enough to find three defects
 and has not yet run green end to end, which is exactly the state M0 closes out of. A failure there is
-information about the compose contract, not evidence of a bad clone — record it before fixing it.
+information about the compose contract, not evidence of a bad clone; record it before fixing it.
 
 1. [Get the code](#1-get-the-code)
 2. [Prerequisites](#2-prerequisites)
@@ -24,9 +24,10 @@ information about the compose contract, not evidence of a bad clone — record i
 
 Skip this section if you already have a clone and a shell in it; start at section 2.
 
-The code travels as a git bundle — a complete history in one file, not a snapshot, so cloning from it
+The code travels as a git bundle: a complete history in one file, not a snapshot, so cloning from it
 reproduces every commit in order with its tags. Verify the file before trusting it, against the hash
-in the transfer folder's `INDEX.md`, which is generated from the bundles themselves:
+in the **bundle facts** block that the transfer folder's copy of this guide carries at its top,
+generated from the bundle itself:
 
 ```powershell
 Get-FileHash mlops-platform.bundle -Algorithm SHA256 | Format-List
@@ -43,14 +44,14 @@ git remote remove origin        # so nothing tries to push to a file
 git rev-list --count HEAD ; git log -1 --format='%H %s' ; git tag
 ```
 
-The last line should agree with `INDEX.md`'s row for this repository. If it does not, the bundle is
-older or newer than the index, and that is worth resolving before running anything.
+The last line should agree with the **bundle facts** rows. If it does not, the bundle is
+older or newer than those facts, and that is worth resolving before running anything.
 
 **A clone has no virtual environment, and is not meant to.** A bundle carries commits, and `.venv/` is
 ignored rather than committed: it hardcodes its own absolute path in `pyvenv.cfg` and in every
 `Scripts\*.exe` shim, so it does not survive being copied anywhere, and it is Windows-specific
 besides. Section 6 builds one as its first command. The same goes for `.env`, the images and the
-volumes -- nothing machine-specific or generated travels in a bundle.
+volumes. Nothing machine-specific or generated travels in a bundle.
 
 **If a clone already exists, bring it forward rather than re-cloning.** A bundle is fetched by *path*,
 so it does not matter that `origin` was removed:
@@ -61,7 +62,7 @@ git merge --ff-only refs/remotes/bundle/main
 ```
 
 A merge that is not a fast-forward means the clone has local commits: stop and report that rather than
-forcing it. Re-cloning into a new folder is the fallback, but it does **not** reset the stack's state —
+forcing it. Re-cloning into a new folder is the fallback, but it does **not** reset the stack's state:
 compose derives its project name from the directory basename, so a clone into a folder named
 `mlops-platform` finds the same volumes the old one used. Section 8 has that as its own entry.
 
@@ -70,13 +71,13 @@ broken repository rather than like a wrong location:
 
 - **Not on an external or exFAT drive.** exFAT has no symlinks, weak file locking and no case
   sensitivity. A virtual environment also hardcodes its absolute path in `pyvenv.cfg` and in every
-  `Scripts\*.exe` shim, so it does not survive a drive letter moving — repairing one is worse than
+  `Scripts\*.exe` shim, so it does not survive a drive letter moving, and repairing one is worse than
   re-cloning. pip, mypy, ruff and pytest are all small-file workloads, several times slower over USB,
   and a drive spinning down mid-`pytest` produces I/O errors that read like corruption.
 - **Not inside OneDrive or any synced tree.** A virtual environment is thousands of small files, the
   `.pytest_cache` and `.mypy_cache` churn constantly, and `git gc` rewrites packs. OneDrive holds
   handles while uploading, which surfaces as intermittent permission errors. If the Desktop is ever
-  redirected, move the repository out and leave a shortcut behind — OneDrive's "Choose folders" cannot
+  redirected, move the repository out and leave a shortcut behind; OneDrive's "Choose folders" cannot
   exclude a folder inside a synced Desktop.
 - **If it does land on another fixed drive:** NTFS only, a permanent letter assigned in Disk
   Management, and `git config --global --add safe.directory F:/GitHub/mlops-platform` with forward
@@ -118,8 +119,8 @@ that fills a system drive. Nothing in this repository reads any of them.
 
 | Drive | What belongs on it | What must not |
 | --- | --- | --- |
-| `C:` (231 GB) | OS, Git, Python, Docker's program files, the repository and its virtual environment — under 1 GB in total | Docker's disk image. The full container profile alone is roughly 20 GB of images |
-| `F:` (931 GB, SSD) | Docker's disk image, configured at `F:\docker\data` — the working drive | — |
+| `C:` (231 GB) | OS, Git, Python, Docker's program files, the repository and its virtual environment, under 1 GB in total | Docker's disk image. The full container profile alone is roughly 20 GB of images |
+| `F:` (931 GB, SSD) | Docker's disk image, configured at `F:\docker\data` , the working drive | none |
 | `D:` (465 GB) | bulk storage and second copies | Docker's image; Spark scratch |
 | `E:` (4.5 TB, external HDD) | cold archive only: the bundles themselves | a clone, a virtual environment, Docker's image, or anything written during a run |
 
@@ -139,10 +140,10 @@ Match `DiskNumber` to `DeviceId` to know which volume sits on which physical dis
 
 The quickstart profile pulls roughly 4 GB of images; the full profile is roughly 20 GB, plus one build.
 On Windows the images and volumes live in a WSL2 virtual disk whose location is a Docker Desktop
-setting — put it on a drive with room, and prefer an SSD, since every pull, build and Spark shuffle
+setting: put it on a drive with room, and prefer an SSD, since every pull, build and Spark shuffle
 spill lands there.
 
-`docker info --format '{{.DockerRootDir}}'` is **not** the check — it prints `/var/lib/docker`, a path
+`docker info --format '{{.DockerRootDir}}'` is **not** the check. It prints `/var/lib/docker`, a path
 inside the WSL2 VM, whichever host drive backs it. Find the backing file instead:
 
 ```powershell
@@ -156,7 +157,7 @@ wsl --list -v      # docker-desktop should be Running
 Worth knowing before the full profile rather than during it. The quickstart override caps its services
 at 3.75 GiB of ceilings in total. The full profile declares about 21 GB, of which two Spark workers at
 7g each are 14. Those are ceilings and not reservations, and nothing at M0 gives Spark real work, so a
-runtime with less than 21 GB is expected to be fine here — but it is over-committed, and a container
+runtime with less than 21 GB is expected to be fine here, but it is over-committed, and a container
 killed during section 6 is that, not a broken service. Raising the WSL2 allocation is a `.wslconfig`
 change on the host.
 
@@ -181,7 +182,7 @@ Copy-Item .env.example .env
 | `AIRFLOW_ADMIN_PASSWORD` | generated, and a third distinct value |
 
 ```powershell
-# once per password -- three runs, three different values
+# once per password: three runs, three different values
 .venv\Scripts\python.exe -c "import secrets; print(secrets.token_hex(24))"
 # once, for AIRFLOW_FERNET_KEY
 .venv\Scripts\python.exe -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
@@ -190,7 +191,7 @@ Copy-Item .env.example .env
 Both are standard library only, on the interpreter this project already has, on every platform it
 supports. They print and store nothing; nothing is saved until you paste it. There is an ordering
 wrinkle: the virtual environment those paths refer to does not exist until section 5 runs `setup`.
-Either run `./make.ps1 setup` first and come back, or substitute `py -3` — they import nothing outside
+Either run `./make.ps1 setup` first and come back, or substitute `py -3`; they import nothing outside
 the standard library, so any interpreter will do.
 
 `.env` goes at the repository root, next to `.env.example`, which is where compose reads it from now
@@ -200,7 +201,7 @@ would rather not have credentials in a file at all, compose reads the process en
 seven variables in the shell and skip `.env` entirely. The doctor and the test suite both count either
 as satisfied, and an exported value wins over the file, because that is compose's own precedence.
 
-There is no `AIRFLOW_ADMIN_USER`. Airflow's login is `admin` with the password above — pinned rather
+There is no `AIRFLOW_ADMIN_USER`. Airflow's login is `admin` with the password above, pinned rather
 than configurable, because the image reads a username variable of its own and a configurable one had
 produced an account nobody could log into
 ([`decisions/008`](decisions/008-airflow-creates-the-admin-it-is-given.md)).
@@ -222,7 +223,7 @@ accepted silently and makes every connection and variable already encrypted unde
 unreadable. That is data loss rather than an error.
 
 `preflight/credentials.py` states which timing applies to each variable and what changing it late
-costs, and two tests fail if that table and `.env.example` ever stop describing the same set — so
+costs, and two tests fail if that table and `.env.example` ever stop describing the same set, so
 copying the example file is guaranteed to give you the complete list, and the table above cannot
 silently drift from it. The doctor's volume check covers the Postgres three
 ([`decisions/009`](decisions/009-a-volume-records-what-it-was-built-with.md)); nothing can check the
@@ -235,7 +236,7 @@ Everything in this section runs with no container runtime at all. Network access
 
 ```powershell
 ./make.ps1 setup      # make setup
-./make.ps1 check      # make check -- lint, format, types, hooks, tests
+./make.ps1 check      # make check: lint, format, types, hooks, tests
 ```
 
 `check` is the whole gate, and green here is the precondition for section 6 being worth starting. It
@@ -243,7 +244,7 @@ runs `ruff check`, `ruff format --check`, `mypy`, `pre-commit run --all-files` a
 has the output each one should produce.
 
 `pre-commit` prints one line per hook and no summary, so there is no "8 hooks passed" line to look
-for — count the lines. The eight are `end-of-file-fixer`, `trailing-whitespace`, `check-yaml`,
+for; count the lines. The eight are `end-of-file-fixer`, `trailing-whitespace`, `check-yaml`,
 `check-merge-conflict`, `detect-private-key`, `check-added-large-files`, `ruff check` and
 `ruff format`.
 
@@ -252,8 +253,8 @@ than whether anything is wrong. They are in section 7 with what separates them.
 
 ## 6. Build and the integration tier
 
-The integration tier starts and stops the stack itself — three idempotency tests on the quickstart
-profile, three smoke tests on the full one — and every compose call inside it has a 600-second
+The integration tier starts and stops the stack itself (three idempotency tests on the quickstart
+profile, three smoke tests on the full one), and every compose call inside it has a 600-second
 timeout. So the work in this section is doing the *pulling and building* first, by hand, outside
 anything timed. Pull inside the suite and a slow network arrives as a failed assertion about
 idempotency.
@@ -282,7 +283,7 @@ docker ps                    # what is still up, if anything
 `build` comes before either `up` for one reason: both `up` targets bound their wait, and a cold build
 inside that budget is minutes spent on work whose result is identical every time. It prints two
 `pip install` lines and ends in a tagged image, after which `docker images mlops-platform/mlflow`
-shows `2.13.0`. If the install step fails, that is PyPI or the network rather than the stack — and it
+shows `2.13.0`. If the install step fails, that is PyPI or the network rather than the stack, and it
 fails here, where it is legible, instead of 300 seconds into a `--wait`.
 
 **Zero skipped is part of the pass condition.** This is the only place the integration tier ever runs,
@@ -309,12 +310,12 @@ answer came from: the probe is only about `apache/airflow`, and the MLflow image
 
 Nothing here has ever been seen running green, so look at it rather than trusting the exit codes.
 
-- **Spark master** at `http://localhost:8080` — one worker with 1 core and 1 GiB under the quickstart
+- **Spark master** at `http://localhost:8080`: one worker with 1 core and 1 GiB under the quickstart
   profile, two workers under the full one.
 - **Airflow** at `http://localhost:8082`, as `admin` with your `AIRFLOW_ADMIN_PASSWORD`. The DAG list
   holds `m0_smoke` and nothing else. An `airflow`/`airflow` login working here would mean the admin
   fix did not take, and is worth reporting.
-- **MLflow** at `http://localhost:5000` — the `m0-smoke` experiment holds one run for each time the
+- **MLflow** at `http://localhost:5000`: the `m0-smoke` experiment holds one run for each time the
   suite ran, each tagged `stack=compose` and `wired=1`.
 
 ### Releasing the disk afterwards
@@ -329,7 +330,7 @@ docker volume ls                                        # nothing mlops-* should
 
 **Two projects, so two cleanups.** The integration tier runs under its own compose project name,
 `mlops-platform-tests`, because compose otherwise derives the name from the directory basename and the
-tier would share the developer's — one stack wearing two names, where a stale volume decides whether
+tier would share the developer's: one stack wearing two names, where a stale volume decides whether
 the suite passes and a `clean` in another window deletes state a test case is mid-way through
 asserting. The cost of that separation is the second line above: `make clean` cannot reach volumes
 belonging to a project it does not name, and the tier's `down` keeps its volumes exactly as
@@ -342,21 +343,21 @@ otherwise.
 
 | Command | Expected output |
 | --- | --- |
-| `ruff check .` | `All checks passed!` — 25 paths: the 24 modules plus `pyproject.toml`, read for configuration |
-| `ruff format --check .` | `41 files already formatted` — 24 Python and 17 Markdown; the formatter handles both |
+| `ruff check .` | `All checks passed!` for 25 paths: the 24 modules plus `pyproject.toml`, read for configuration |
+| `ruff format --check .` | `41 files already formatted`, covering 24 Python and 17 Markdown; the formatter handles both |
 | `mypy` | `Success: no issues found in 23 source files` |
 | `pre-commit run --all-files` | 8 lines, each `Passed`; no summary line |
 | `pytest`, no runtime | `107 passed, 11 skipped` |
-| `pytest`, runtime but no credentials | `112 passed, 6 skipped` — derived, not measured |
-| `pytest`, runtime and credentials | `118 passed, 0 skipped` — derived, not measured; the M0 pass condition |
+| `pytest`, runtime but no credentials | `112 passed, 6 skipped`, derived rather than measured |
+| `pytest`, runtime and credentials | `118 passed, 0 skipped`, derived rather than measured; the M0 pass condition |
 | `docker images mlops-platform/mlflow` | one row, tag `2.13.0`, after `build` |
-| `make doctor` | three checks — `container runtime`, `credentials`, `postgres volume` — each `OK`, except that the volume check reports it cannot verify a volume created before the fingerprint existed |
+| `make doctor` | three checks (`container runtime`, `credentials`, `postgres volume`), each `OK`, except that the volume check reports it cannot verify a volume created before the fingerprint existed |
 
 Only the first `pytest` row is measured; the other two are derived from which guard each test carries,
 because the authoring machine cannot produce them. If a run disagrees with the row it should be on,
-**that disagreement is the finding** — record it before fixing it.
+**that disagreement is the finding**. Record it before fixing it.
 
-The eleven skips divide as five image-resolution checks, one per registry reference — the four tags
+The eleven skips divide as five image-resolution checks, one per registry reference: the four tags
 the spine pulls plus the base the one built image comes from (they ask a registry whether each still
 resolves, which needs a docker client); three idempotency tests; and three that run the smoke DAG.
 The last six need credentials as well as a runtime, which is why the middle row drops six rather than
@@ -407,7 +408,7 @@ was given, when you want to reach it.
 ### The doctor refuses: `container runtime`
 
 Start Docker Desktop and wait for it to settle. If it is already running, that is worth reporting
-rather than retrying — the check distinguishes "not installed" from "not running", so its message says
+rather than retrying. The check distinguishes "not installed" from "not running", so its message says
 which it saw.
 
 ### The doctor refuses: `credentials`
@@ -417,7 +418,7 @@ pass fills them all in.
 
 ### The doctor refuses: `postgres volume`, saying it was initialised with different credentials
 
-`./make.ps1 reset` — which is `clean` then `up`, and destroys the volume, which is why the doctor names
+`./make.ps1 reset`, which is `clean` then `up`, and destroys the volume, which is why the doctor names
 it rather than doing it. Targeted, if you would rather keep the MinIO volume: `./make.ps1 down`, then
 `docker volume rm mlops-platform_postgres-data`, then up again.
 
@@ -426,11 +427,11 @@ before a container starts. Postgres reads `POSTGRES_USER` and `POSTGRES_PASSWORD
 initialising an empty volume, so a credential changed after the first `up` leaves the old role in place
 ([`decisions/007`](decisions/007-a-kept-volume-pins-the-first-runs-credentials.md)).
 
-### The doctor says `postgres volume` — cannot verify
+### The doctor says `postgres volume`: cannot verify
 
 Expected, and not a bug, on any volume created before the fingerprint existed: the digest is written
 when a volume is initialised, so one that predates it holds no record of what built it. It never blocks
-a start, and it becomes a real answer only after a `clean` — it does not repair itself. On a volume
+a start, and it becomes a real answer only after a `clean`; it does not repair itself. On a volume
 created from this code onwards, expect `OK`: empty before the first `up`, then matched on every start
 after it.
 
@@ -463,7 +464,7 @@ docker inspect --format '{{json .State.Health}}' mlops-platform-mlflow-1
 
 An exit code of 127, or "executable file not found", is the healthcheck. Anything else is the service.
 **Suspect the probe first:** three defects here so far have been the probe rather than the thing it
-probes — Spark's, MLflow's and Airflow's, all the same mistake. A probe naming a binary its image lacks
+probes: Spark's, MLflow's and Airflow's, all the same mistake. A probe naming a binary its image lacks
 can never report healthy, so `--wait` sits for its full 300 seconds and then reports a broken
 *service*, which is how `mlflow is unhealthy` turned out to mean `curl is missing`. Spark's probe uses
 `wget`, because that image ships no `curl`; MLflow's and Airflow's use `python`, which those two images
@@ -475,7 +476,7 @@ refuses a healthcheck naming a binary its image is not recorded as providing.
 ### A pinned image no longer resolves
 
 `test_every_pinned_image_still_resolves` failing on a pin means an upstream deletion, not a bad
-clone — it is the test that would have caught the Spark withdrawal that broke the first `up` on this
+clone. It is the test that would have caught the Spark withdrawal that broke the first `up` on this
 project. The fix is a decision record and a new publisher, not a retry, and never a switch to a
 floating tag.
 
@@ -483,7 +484,7 @@ Read the tag it names before believing that, because the module probes two diffe
 reference: the tags this spine pulls, and the `FROM` of the one it builds. A failure naming
 `ghcr.io/mlflow/mlflow:v2.13.0`, `apache/spark:3.5.1-python3`, `apache/airflow:2.9.2-python3.11`,
 `postgres:16.3-alpine` or `minio/minio:…` is the withdrawal case above. A failure naming
-`mlops-platform/mlflow:2.13.0` is not — no registry has heard of a tag this repository produces, so
+`mlops-platform/mlflow:2.13.0` is not, because no registry has heard of a tag this repository produces, so
 that is the sorting itself having regressed, and
 [`decisions/012`](decisions/012-a-built-tag-is-not-a-registry-fact.md) is the entry to read.
 
@@ -517,8 +518,8 @@ middle, and re-running it will keep producing whatever it produced before.
 ### `test_the_scheduler_registers_the_dag_without_an_import_error` fails
 
 Airflow cannot import `airflow/dags/m0_smoke.py` at all, which would mean the DAG uses something the
-pinned image does not ship. That is the one thing the contract tier already refuses — DAGs are parsed
-with `ast` and may import Airflow and the standard library only — so a failure here is a genuine
+pinned image does not ship. That is the one thing the contract tier already refuses: DAGs are parsed
+with `ast` and may import Airflow and the standard library only, so a failure here is a genuine
 surprise worth recording rather than patching
 ([`decisions/010`](decisions/010-a-smoke-dag-closes-m0.md)).
 
@@ -532,7 +533,7 @@ it is.
 ### A volume with a 64-hex name appears
 
 A hex name means the runtime created an anonymous volume because an image declares `VOLUME` at a path
-the compose file does not mount — the same class as the two defects in
+the compose file does not mount, the same class as the two defects in
 [`decisions/011`](decisions/011-what-is-inside-an-image-is-a-claim.md), since
 `test_stateful_services_use_named_volumes` reads the compose file and an image can declare storage that
 file never mentions. Attribute it before concluding anything, and do not delete it first: a deleted

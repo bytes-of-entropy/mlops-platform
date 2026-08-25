@@ -1,4 +1,4 @@
-# 006 — A missing precondition skips with its name; it does not fail as the thing it blocks
+# 006: A missing precondition skips with its name; it does not fail as the thing it blocks
 
 - **Date:** 2026-08-23
 - **Status:** accepted
@@ -7,7 +7,7 @@
 
 ## Context
 
-On the build machine, in a perfectly reasonable order — install Docker, then run the gate — the
+On the build machine, in a perfectly reasonable order (install Docker, then run the gate), the
 three idempotency tests failed. Not because idempotency is broken; because `.env` did not exist
 yet. Compose refuses to render a file with an unset interpolation, so `up` returned non-zero, and
 the assertion that reported it says `compose up failed`. The message underneath was accurate and
@@ -18,8 +18,8 @@ repository, on a machine where that property was never exercised.
 The repository already had the right pattern one layer down. `probe_docker` exists because
 installed is not the same as usable: a presence check would mark the tier runnable and let it fail
 on a connection error, which reads like a broken repository rather than a stopped daemon. The
-credentials are the same shape one step along — a daemon that answers is not the same as a spine
-that can start — and nothing was checking for them.
+credentials are the same shape one step along: a daemon that answers is not the same as a spine
+that can start, and nothing was checking for them.
 
 The ordering that exposed it is not a mistake to correct in a runbook. Docker before credentials
 and credentials before Docker are both sensible, and a suite that only works in one of the two
@@ -34,7 +34,7 @@ orders is a suite with an undocumented prerequisite.
 the eight names in test code, so a variable added to the spine cannot be remembered in one place
 and forgotten in the other. It treats a variable as satisfied by a non-empty value in `.env` **or**
 in the process environment, because compose reads both and the export-instead-of-file route is a
-supported choice — a guard that only looked for the file would skip on a machine that was in fact
+supported choice, since a guard that only looked for the file would skip on a machine that was in fact
 ready, which is the failure mode that matters most here, since a wrong skip looks exactly like a
 pass.
 
@@ -44,7 +44,7 @@ one round trip rather than eight.
 `tests/test_local_credentials.py` tests the guard the way `tests/test_docker_probe.py` tests the
 other one: the classification is a pure function of three inputs, so it is checked without
 creating or deleting a real `.env`. Two of its assertions are about `.env.example` being a
-trustworthy source — every variable the compose files interpolate appears in it, and it names
+trustworthy source: every variable the compose files interpolate appears in it, and it names
 nothing the compose files do not use. Those are the only facts the guard depends on.
 
 ## Alternative rejected
@@ -52,7 +52,7 @@ nothing the compose files do not use. Those are the only facts the guard depends
 **Leave it failing, and fix the runbook's step order.** Cheapest, and it has some merit: a loud
 failure is not the worst outcome. Rejected because the failure names the wrong thing. Someone
 reading `test_state_survives_down_and_up FAILED` on a fresh machine has been told the repository's
-central claim is broken, and the true statement — "this machine has no credentials yet" — is four
+central claim is broken, and the true statement, "this machine has no credentials yet", is four
 lines further down in captured stderr. Documentation cannot fix a test that lies about its own
 subject.
 
@@ -80,15 +80,15 @@ I expect three counts on the build machine, depending on where it is in the runb
 | State | Expect |
 | --- | --- |
 | Docker not installed | 54 passed, 8 skipped |
-| Docker ready, no `.env` yet | 59 passed, 3 skipped — and the three skips say `MINIO_ROOT_USER, …` |
+| Docker ready, no `.env` yet | 59 passed, 3 skipped, and the three skips say `MINIO_ROOT_USER, …` |
 | Docker ready, `.env` filled in | 62 passed, 0 skipped |
 
 The middle row is the one this record exists for. It was three failures before this change.
 
 ## What the counts are now
 
-The three rows above are the counts at this commit. A later fix in this repository -- the
-integration tier's failure report, which reads both output streams instead of stderr alone -- adds
+The three rows above are the counts at this commit. A later fix in this repository, the
+integration tier's failure report, which reads both output streams instead of stderr alone, adds
 seven contract-tier items, so the same three states now read 61 / 8, 66 / 3 and 69 / 0. The rows
 are left as they were measured rather than edited to match, because a prediction quietly rewritten
 after the fact is not a prediction. The current numbers live in the README and the build-machine
@@ -99,7 +99,7 @@ runbook, which are the documents that are supposed to move.
 Measured here: **54 passed, 8 skipped**, matching the prediction, with the eight skips still
 reporting the Docker reason because Docker is the precondition missing on this machine. The guard's
 computed state on this machine is all eight variables, which is the same count the runbook asks a
-reviewer to fill in — derived, not copied.
+reviewer to fill in: derived, not copied.
 
 The twelve new tests cover the classification directly: a value present but empty does not count,
 a variable exported into the environment does count, a default already filled in the example needs
@@ -111,11 +111,11 @@ build-machine sequence is what settles them.
 
 ## What would change my mind
 
-If a third precondition appears — a port already bound, a WSL2 memory limit too small for the
-quickstart envelope — then three separate `skipif` markers stop being the right shape and this
+If a third precondition appears (a port already bound, a WSL2 memory limit too small for the
+quickstart envelope), then three separate `skipif` markers stop being the right shape and this
 becomes one probe returning a state, the way `probe_docker` already does for its three outcomes.
 
-If a wrong skip is ever observed — the tier skipping on a machine that could have run it — then
+If a wrong skip is ever observed (the tier skipping on a machine that could have run it), then
 the satisfied-set logic is too permissive and the guard should verify by asking compose
 (`config --quiet`) rather than by reading files.
 
