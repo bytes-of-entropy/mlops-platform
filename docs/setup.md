@@ -263,9 +263,10 @@ idempotency.
 name, which isolates containers, networks and volumes but not published host ports. So the compose
 file names no fixed host port of its own: the host half of each mapping is a variable whose default is
 the number `make up` has always published, and the tier sets each one to `0`, which asks Docker for a
-free port at bind time. A stack left up from a by-hand session is no longer a reason for the suite to
-fail. Bring it down first anyway if you want a clean read of the timings, since two stacks on one
-machine share its CPU and its disk:
+free port at bind time
+([`decisions/013`](decisions/013-the-kernel-chooses-the-tiers-host-ports.md)). A stack left up from
+a by-hand session is no longer a reason for the suite to fail. Bring it down first anyway if you
+want a clean read of the timings, since two stacks on one machine share its CPU and its disk:
 
 ```powershell
 ./make.ps1 doctor            # the preconditions alone, starting nothing
@@ -402,7 +403,9 @@ including a Spark master that crashed afterwards with `java.net.UnknownHostExcep
 Temporary failure in name resolution`. That was debris from the aborted network programming rather
 than a Spark fault: a container whose endpoint never finished being created has no name to resolve.
 The fix was to stop the compose file naming host ports at all, so the tier and a by-hand stack can
-hold their own. `docker compose -p mlops-platform-tests port mlflow 5000` reports what a running tier
+hold their own, recorded in
+[`decisions/013`](decisions/013-the-kernel-chooses-the-tiers-host-ports.md).
+`docker compose -p mlops-platform-tests port mlflow 5000` reports what a running tier
 was given, when you want to reach it.
 
 ### The doctor refuses: `container runtime`
