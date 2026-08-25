@@ -46,6 +46,12 @@ git rev-list --count HEAD ; git log -1 --format='%H %s' ; git tag
 The last line should agree with `INDEX.md`'s row for this repository. If it does not, the bundle is
 older or newer than the index, and that is worth resolving before running anything.
 
+**A clone has no virtual environment, and is not meant to.** A bundle carries commits, and `.venv/` is
+ignored rather than committed: it hardcodes its own absolute path in `pyvenv.cfg` and in every
+`Scripts\*.exe` shim, so it does not survive being copied anywhere, and it is Windows-specific
+besides. Section 6 builds one as its first command. The same goes for `.env`, the images and the
+volumes -- nothing machine-specific or generated travels in a bundle.
+
 **If a clone already exists, bring it forward rather than re-cloning.** A bundle is fetched by *path*,
 so it does not matter that `origin` was removed:
 
