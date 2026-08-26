@@ -74,6 +74,9 @@ EPHEMERAL_PORTS = {
 TIMEOUT_S = 600
 #: Enough log to hold a start-up objection, short of replaying the whole boot.
 LOG_TAIL_LINES = 30
+#: A service that exited non-zero gets more room than the shared tail allows, because its output
+#: is the one thing the report exists to surface.
+FAILURE_LOG_LINES = 80
 
 
 def run(argv: list[str]) -> subprocess.CompletedProcess[str]:
@@ -116,7 +119,60 @@ class Stack:
                 gathered[name] = f"could not be gathered: {error!r}"
                 continue
             gathered[name] = probe.stdout or probe.stderr
+
+        # The section above is one shared budget across every service, and the report caps each
+        # section, so a stack of chatty services crowds out the quiet one that actually failed.
+        # That is not hypothetical: a one-shot provisioner exited 1, and its output was the part
+        # truncated away, leaving a report that named the failure and not its cause. Anything that
+        # exited non-zero therefore gets a section to itself, which cannot be squeezed out by
+        # Postgres announcing that it is ready.
+        for service in self.exited_badly():
+            key = f"{service} log (exited non-zero)"
+            try:
+                probe = run(
+                    [*self.argv, "logs", "--no-color", "--tail", str(FAILURE_LOG_LINES), service]
+                )
+            except (OSError, subprocess.SubprocessError) as error:
+                gathered[key] = f"could not be gathered: {error!r}"
+                continue
+            gathered[key] = probe.stdout or probe.stderr or "(the container produced no output)"
         return gathered
+
+    def exited_badly(self) -> list[str]:
+        """Services whose container is gone and left a non-zero code behind.
+
+        Best effort by construction: this runs while something has already failed, so it must never
+        raise and never mask the failure it is describing. An empty list means "nothing to add",
+        never "everything is fine".
+        """
+        try:
+            probe = run([*self.argv, "ps", "--all", "--format", "json"])
+        except (OSError, subprocess.SubprocessError):
+            return []
+
+        text = (probe.stdout or "").strip()
+        if not text:
+            return []
+        try:
+            # Compose has emitted both a JSON array and one object per line across versions, and
+            # which one is not worth depending on.
+            records = (
+                json.loads(text)
+                if text.startswith("[")
+                else [json.loads(line) for line in text.splitlines() if line.strip()]
+            )
+        except (TypeError, ValueError):
+            return []
+
+        failed: list[str] = []
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            code = record.get("ExitCode")
+            service = record.get("Service")
+            if isinstance(service, str) and isinstance(code, int) and code != 0:
+                failed.append(service)
+        return sorted(set(failed))
 
     def check(self, label: str, *args: str) -> subprocess.CompletedProcess[str]:
         """Run a compose subcommand, and if it fails say everything about how it failed."""

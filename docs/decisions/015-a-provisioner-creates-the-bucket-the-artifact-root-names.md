@@ -78,13 +78,45 @@ provisioner actually runs, because this machine has no container runtime. So:
 
 ## Deciding evidence
 
-Empty for the container half until the tier runs. Filled in a later commit that does not touch the
-Prediction above.
+The tier ran on the build machine on 2026-08-26 and **failed**: `3 failed, 116 passed, 5 errors`, with
+every one of the eight traced to one cause, `service "minio-init" didn't complete successfully: exit 1`,
+which fails `up` and errors everything downstream of it.
 
-Verified here already: `ruff`, `ruff format`, `mypy` over 24 files, and `111 passed, 13 skipped`, the two
-new integration tests among the skips because they need a runtime. The envelope is computed as peak
-3840 MiB and 2.00 CPU with `minio-init` charged **zero** on both, which is the model below working as
-intended rather than a coincidence.
+Scoring the prediction above, unedited:
+
+- **"About 70% the round trip passes on the first run": wrong.** It did not pass.
+- **"Most likely single failure, roughly 15%, the entrypoint override": refuted.** `compose ps` shows
+  the container ran `"/bin/sh -c mc mb --…"`, so that image does provide `/bin/sh`. The assumption I
+  flagged as likeliest to break was the one that held.
+- **"Second most likely, roughly 10%, `mc mb --ignore-existing` being spelled differently": correct, and
+  it was the cause.** Run in the foreground, `mc` printed its *top-level* help into an interactive pager
+  and exited 1. The 10% branch was the right mechanism at the wrong odds: I ranked a guess about a shell
+  above a guess about a CLI contract, and the CLI contract is the thing neither I nor any test here had
+  ever executed.
+- **"The `MC_HOST_spine` mechanism will not fail": unsettled.** `mc` never got as far as resolving an
+  alias, so this was neither confirmed nor refuted and is now moot.
+- **"The quickstart envelope will not be exceeded": confirmed on the build machine.** The whole contract
+  tier passed there, 116 tests including the amended envelope and the new one-shot contracts. The design
+  held; only the container behaviour failed.
+
+**The decision stands and the implementation changed.** A one-shot provisioner is still the right shape,
+for the least-privilege reason that decided it, and none of that reasoning depended on `mc`. What changed
+is the tool: the provisioner now runs `ensure_buckets.py` in the image this repository already builds for
+MLflow, where `boto3` already lives.
+
+The reason is worth recording, because it generalises past this bug. `mc mb --ignore-existing` was chosen
+because the MinIO image ships `mc`, so it needed no new dependency; that was true and irrelevant. It cost
+a full cycle on the build machine to discover a flag spelling, and the same job in `boto3` is one call
+with two documented error codes meaning "already there" and everything else raised, which can be reasoned
+about before running rather than after. It also needs no config file, no alias resolution and no TTY,
+three things the CLI wanted and none of which this job needs. **Reusing a tool that happens to be present
+is not the same as reusing a contract you can predict**, and this repository has now been wrong four times
+about what an external image provides. The pattern is the point: prefer the interface whose failure modes
+are enumerable.
+
+Verified locally after the change: `ruff`, `ruff format`, `mypy` over 24 files, and `111 passed, 13
+skipped` across 124 collected. The container behaviour is again unverified, which is the honest position:
+this is the second attempt at a step no machine here can execute.
 
 ## What would change my mind
 

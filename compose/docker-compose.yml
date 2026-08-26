@@ -132,9 +132,12 @@ services:
   # A one-shot provisioner rather than a service. It creates the buckets the spine's consumers
   # are configured to write to, and exits. Three deliberate properties:
   #
-  # Same image and same pin as `minio`. That image already ships `mc`, which its own healthcheck
-  # runs, so provisioning adds no registry reference and nothing new to keep pinned. An `mc`-only
-  # image would have been a second thing to track for no capability.
+  # The image this repository already builds for MLflow, because that is where boto3 already is. An
+  # earlier version of this service ran `mc mb --ignore-existing` in the MinIO image, which does ship
+  # `mc`; that `mc` rejected the invocation, printed its top-level help into a pager and exited 1.
+  # boto3 has semantics that can be reasoned about before running rather than discovered on the
+  # build machine: one call, two documented "already there" codes, everything else raised
+  # (`docs/decisions/015`).
   #
   # No healthcheck, because it is not meant to stay up. What gates its consumers is
   # `service_completed_successfully`, which is a stronger guarantee than a healthcheck: a
@@ -147,14 +150,18 @@ services:
   # permission to create a bucket. MLflow is left needing read and write inside one, which is the
   # distinction that matters the moment root credentials are replaced by a real role.
   minio-init:
-    image: minio/minio:RELEASE.2024-06-04T19-20-08Z
-    entrypoint: ["/bin/sh", "-c"]
-    command: mc mb --ignore-existing spine/mlflow
+    image: mlops-platform/mlflow:2.13.0
+    # Declared so this service can build the image it needs on its own. Compose builds the shared
+    # tag once, so naming it twice costs nothing and stops `run minio-init` depending on some
+    # earlier `up` having built it.
+    build:
+      context: images/mlflow
+    entrypoint: ["python", "/opt/ensure_buckets.py"]
+    command: ["mlflow"]
     environment:
-      # `mc` reads its target from MC_HOST_<alias>, so the alias needs no separate `mc alias set`
-      # and no credential reaches the command line or this service's argv. Same
-      # interpolated-and-required shape as every other credential in the spine.
-      MC_HOST_spine: http://${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}:${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}@minio:9000
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
     depends_on:
       minio:
         condition: service_healthy

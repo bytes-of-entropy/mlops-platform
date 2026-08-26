@@ -10,3 +10,8 @@ FROM ghcr.io/mlflow/mlflow:v2.13.0
 RUN pip install --no-cache-dir \
         psycopg2-binary==2.9.9 \
         boto3==1.34.131
+
+# The bucket provisioner runs as a one-shot from this same image, because this is where boto3 already
+# is. A second image carrying one dependency for one script would be a second thing to pin and
+# rebuild. See docs/decisions/015.
+COPY ensure_buckets.py /opt/ensure_buckets.py
