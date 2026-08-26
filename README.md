@@ -22,6 +22,16 @@ the minimum that lets M0 start, not the beginning of that work. Model registry, 
 canary rollout are deliberately deferred; see
 [`docs/decisions/001`](docs/decisions/001-defer-registry-drift-canary.md).
 
+**One honest limit, because a reviewer will otherwise ask it first.** Of the services the spine
+starts, the two Spark workers are healthy and **idle**: no job has ever been submitted to this
+cluster, because the smoke path deliberately uses the standard library only and M0 has no workload
+to give them. Object storage was in that same category until it turned out to be worse than idle,
+a configured artifact root pointing at a bucket nothing created
+([`docs/decisions/015`](docs/decisions/015-a-provisioner-creates-the-bucket-the-artifact-root-names.md));
+it is now provisioned and exercised by a test that round-trips a real object through it. Spark gets
+the same treatment at M2, when there is a real job to submit rather than a synthetic one invented to
+make a test pass.
+
 ## The decision this enables
 
 Every later number in this portfolio (a Spark tuning figure, an evaluation metric, a cost report)
@@ -189,8 +199,8 @@ diagnosis that only ever appears in a container's log:
 [`docs/decisions/007`](docs/decisions/007-a-kept-volume-pins-the-first-runs-credentials.md).
 
 The next one was not a failure at all, which is why it took so long to be seen. Everything above
-asserts one service at a time, and a healthcheck is a service answering its own port, and seven passing
-ones are seven services that are each alive, and say nothing about whether any two of them can reach
+asserts one service at a time, and a healthcheck is a service answering its own port, so a stack of
+them passing is a stack of services each alive, saying nothing about whether any two of them can reach
 each other. `airflow/dags/m0_smoke.py` is the smallest thing that does: one task creates an MLflow
 run, logs a param and a metric, and marks it finished, which crosses four boundaries in one artefact:
 Airflow parsing the file, Airflow executing it, MLflow accepting the writes, and Postgres holding the

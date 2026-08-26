@@ -381,9 +381,9 @@ otherwise.
 | `ruff format --check .` | `43 files already formatted`, covering 24 Python and 19 Markdown; the formatter handles both |
 | `mypy` | `Success: no issues found in 23 source files` |
 | `pre-commit run --all-files` | 8 lines, each `Passed`; no summary line |
-| `pytest`, no runtime | `109 passed, 11 skipped` |
-| `pytest`, runtime but no credentials | `114 passed, 6 skipped`, derived rather than measured |
-| `pytest`, runtime and credentials | `120 passed, 0 skipped`, **measured on the build machine**; the M0 pass condition |
+| `pytest`, no runtime | `111 passed, 13 skipped` |
+| `pytest`, runtime but no credentials | `116 passed, 8 skipped`, derived rather than measured |
+| `pytest`, runtime and credentials | `124 passed, 0 skipped`, derived rather than measured; the M0 pass condition |
 | `docker images mlops-platform/mlflow` | one row, tag `2.13.0`, after `build` |
 | `make doctor` | three checks (`container runtime`, `credentials`, `postgres volume`), each `OK`, except that the volume check reports it cannot verify a volume created before the fingerprint existed |
 
@@ -401,7 +401,7 @@ three.
 passed count and add two to the skipped count in each row: those two preflight tests are gated on a POSIX
 shell rather than on a runtime, so no amount of Docker unskips them.
 
-**The tier reached the pass condition on the build machine**: `120 passed, 0 skipped`. Two earlier runs are
+**The tier reached the pass condition on the build machine**: `120 passed, 0 skipped`, at the commit tagged `v0.1.0`. The count has moved since, to a derived `124`: the two artifact-store tests and two compose-contract tests were added by `docs/decisions/015`, so the last measured total and the current expected total are deliberately different numbers. Two earlier runs are
 worth keeping beside it, because both were misread at the time. `3 failed, 110 passed, 2 skipped, 3 errors in
 190.24s` was the first, and all six of those failures traced to host ports already being bound rather than to
 six separate defects. Then `118 passed, 2 skipped in 267.77s`, which was a fully green tier whose two
@@ -553,7 +553,7 @@ git rev-list --count HEAD
 git log -1 --format='%h %s'
 ```
 
-The tree that ships this file collects 120 items. Anything else is a working tree somewhere in the
+The tree that ships this file collects 124 items. Anything else is a working tree somewhere in the
 middle, and re-running it will keep producing whatever it produced before.
 
 The `-q` flag is deliberately absent from that first command. With it, `--collect-only` prints one line
