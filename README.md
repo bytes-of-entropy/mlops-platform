@@ -262,7 +262,7 @@ make check    # the gate: formatting, ruff, mypy, the pre-commit hooks, then the
 Current output on the authoring machine, which has no container runtime:
 
 ```
-ruff format --check .   42 files already formatted
+ruff format --check .   43 files already formatted
 ruff check .            All checks passed!
 mypy                    Success: no issues found in 23 source files
 pre-commit --all-files  8 hooks, all Passed

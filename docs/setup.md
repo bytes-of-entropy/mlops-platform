@@ -363,7 +363,7 @@ otherwise.
 | Command | Expected output |
 | --- | --- |
 | `ruff check .` | `All checks passed!` for 25 paths: the 24 modules plus `pyproject.toml`, read for configuration |
-| `ruff format --check .` | `42 files already formatted`, covering 24 Python and 18 Markdown; the formatter handles both |
+| `ruff format --check .` | `43 files already formatted`, covering 24 Python and 19 Markdown; the formatter handles both |
 | `mypy` | `Success: no issues found in 23 source files` |
 | `pre-commit run --all-files` | 8 lines, each `Passed`; no summary line |
 | `pytest`, no runtime | `109 passed, 11 skipped` |
