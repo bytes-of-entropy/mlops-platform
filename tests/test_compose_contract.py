@@ -43,11 +43,57 @@ def test_every_image_is_pinned(services: dict[str, dict[str, Any]]) -> None:
         assert not tag.endswith("-latest"), f"{name} tag {tag} is a moving target"
 
 
-def test_every_service_declares_a_healthcheck(services: dict[str, dict[str, Any]]) -> None:
+def completion_waiters(services: dict[str, dict[str, Any]]) -> dict[str, set[str]]:
+    """Map each service to the services gated on it *finishing*, not on it answering.
+
+    One-shot provisioners are the reason this exists. They cannot have a healthcheck, because a
+    healthcheck asks whether something is still answering and the answer is deliberately no.
+    """
+    waiters: dict[str, set[str]] = {}
     for name, service in services.items():
-        assert "healthcheck" in service, (
-            f"{name} has no healthcheck, so `up --wait` returns before it is usable "
-            "and the quickstart timing claim becomes a guess"
+        for dependency, spec in (service.get("depends_on") or {}).items():
+            if not isinstance(spec, dict):
+                continue
+            if spec.get("condition") == "service_completed_successfully":
+                waiters.setdefault(str(dependency), set()).add(name)
+    return waiters
+
+
+def test_every_service_is_either_healthchecked_or_waited_for(
+    services: dict[str, dict[str, Any]],
+) -> None:
+    """The generalisation of "every service declares a healthcheck", which this replaces.
+
+    That rule was right about what it was defending, `up --wait` returning before the stack is
+    usable, and wrong to assume the only way to defend it is a healthcheck. A one-shot has a
+    stronger gate available: something waits for it to *complete*, which a healthcheck cannot
+    express. So the requirement is that every service carries one of the two, and the failure
+    this catches is a service carrying neither, which is the case that actually breaks `--wait`.
+    """
+    waiters = completion_waiters(services)
+    for name, service in services.items():
+        if "healthcheck" in service:
+            continue
+        assert waiters.get(name), (
+            f"{name} declares no healthcheck and nothing waits for it to complete, so `up --wait` "
+            "returns before it is either usable or finished, and the quickstart timing claim "
+            "becomes a guess"
+        )
+
+
+def test_a_one_shot_service_does_not_restart(services: dict[str, dict[str, Any]]) -> None:
+    """A provisioner that restarts never completes, so the condition waiting on it never fires.
+
+    The symptom is not a crash. It is `up --wait` sitting until its timeout and then reporting the
+    *consumer* as unhealthy, which is the same misattribution three healthchecks in this file
+    already caused once.
+    """
+    keeps_alive = {"always", "unless-stopped", "on-failure"}
+    for name in completion_waiters(services):
+        policy = str(services[name].get("restart", "no"))
+        assert policy not in keeps_alive, (
+            f"{name} is waited on with service_completed_successfully but declares "
+            f"restart: {policy}, so it is restarted rather than allowed to finish"
         )
 
 
@@ -73,6 +119,10 @@ def test_a_healthcheck_only_names_a_binary_its_image_provides(
     mind of whoever wrote the file.
     """
     for name, service in services.items():
+        if "healthcheck" not in service:
+            # A one-shot has no healthcheck to check a binary against. What it runs instead is
+            # gated by test_every_service_is_either_healthchecked_or_waited_for.
+            continue
         image = service["image"]
         known = next(
             (binaries for prefix, binaries in IMAGE_PROVIDES.items() if image.startswith(prefix)),
@@ -130,9 +180,19 @@ def test_dependencies_wait_for_health_not_start(services: dict[str, dict[str, An
                 f"{name} depends on {dependency} by list form, which waits for container "
                 "start rather than readiness"
             )
-            assert spec.get("condition") == "service_healthy", (
-                f"{name} -> {dependency} does not wait for health"
+            condition = spec.get("condition")
+            assert condition in {"service_healthy", "service_completed_successfully"}, (
+                f"{name} -> {dependency} waits on {condition}, which is neither readiness nor "
+                "completion, so it waits for container start and races whatever it needs"
             )
+            if condition == "service_completed_successfully":
+                # Only legitimate against something that terminates. Waiting for a long-running
+                # service to complete is a hang, not a dependency, and `up --wait` would sit
+                # until its timeout and then blame the waiter.
+                assert "healthcheck" not in services[str(dependency)], (
+                    f"{name} waits for {dependency} to complete, but {dependency} declares a "
+                    "healthcheck, so it is meant to stay up and will never complete"
+                )
 
 
 def test_stateful_services_use_named_volumes(
@@ -205,7 +265,18 @@ def test_host_bind_mounts_are_read_only(services: dict[str, dict[str, Any]]) -> 
 
 
 def test_restart_policy_declared(services: dict[str, dict[str, Any]]) -> None:
+    """Required of everything meant to stay up, and deliberately absent from what is not.
+
+    The rule used to apply to every service without exception, which was correct while every
+    service was long-running. A one-shot provisioner with `restart: unless-stopped` is restarted
+    forever and never completes, so the condition waiting on it never fires; the separate
+    assertion in test_a_one_shot_service_does_not_restart is what catches that, and this one
+    stops requiring the policy that would cause it.
+    """
+    one_shot = set(completion_waiters(services))
     for name, service in services.items():
+        if name in one_shot:
+            continue
         assert service.get("restart") == "unless-stopped", (
             f"{name} has no restart policy, so a crash looks like a config error"
         )

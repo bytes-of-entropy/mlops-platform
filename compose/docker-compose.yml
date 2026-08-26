@@ -129,6 +129,41 @@ services:
           cpus: "1.0"
           memory: 1g
 
+  # A one-shot provisioner rather than a service. It creates the buckets the spine's consumers
+  # are configured to write to, and exits. Three deliberate properties:
+  #
+  # Same image and same pin as `minio`. That image already ships `mc`, which its own healthcheck
+  # runs, so provisioning adds no registry reference and nothing new to keep pinned. An `mc`-only
+  # image would have been a second thing to track for no capability.
+  #
+  # No healthcheck, because it is not meant to stay up. What gates its consumers is
+  # `service_completed_successfully`, which is a stronger guarantee than a healthcheck: a
+  # healthcheck says a service answers, completion says the work is done.
+  #
+  # No `restart` policy. A provisioner that restarts never completes, so the condition above
+  # would never fire and `up --wait` would hang until its timeout.
+  #
+  # Bucket creation lives here and not in MLflow's start-up so that only this step needs
+  # permission to create a bucket. MLflow is left needing read and write inside one, which is the
+  # distinction that matters the moment root credentials are replaced by a real role.
+  minio-init:
+    image: minio/minio:RELEASE.2024-06-04T19-20-08Z
+    entrypoint: ["/bin/sh", "-c"]
+    command: mc mb --ignore-existing spine/mlflow
+    environment:
+      # `mc` reads its target from MC_HOST_<alias>, so the alias needs no separate `mc alias set`
+      # and no credential reaches the command line or this service's argv. Same
+      # interpolated-and-required shape as every other credential in the spine.
+      MC_HOST_spine: http://${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}:${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}@minio:9000
+    depends_on:
+      minio:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256m
+
   postgres:
     image: postgres:16.3-alpine
     environment:
@@ -176,6 +211,11 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      # Not just that MinIO answers, but that the bucket `--default-artifact-root` names exists.
+      # Without this the server starts healthy and fails on the first artifact write, which is
+      # how the missing bucket survived a green M0: nothing in the smoke path logs an artifact.
+      minio-init:
+        condition: service_completed_successfully
     healthcheck:
       # python rather than curl: this image ships an interpreter by construction and does not
       # promise curl. A healthcheck naming a binary the image lacks never reports healthy, so it
