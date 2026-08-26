@@ -17,7 +17,7 @@ integration tier then found a third, this one in a test rather than in the stack
 silently moved a supply-chain check off the pin it was there to watch
 ([`docs/decisions/012`](docs/decisions/012-a-built-tag-is-not-a-registry-fact.md)). M0 closes when the
 integration tier is green end to end, which it is not yet. Hardened images (M1: multi-stage, non-root,
-an SBOM and a scan step in CI), then Helm charts and Terraform (M2), are next; the one image built here is
+an SBOM and a scan step in CI), then Helm charts (M2) and Terraform (M3), are next; the one image built here is
 the minimum that lets M0 start, not the beginning of that work. Model registry, drift detection and
 canary rollout are deliberately deferred; see
 [`docs/decisions/001`](docs/decisions/001-defer-registry-drift-canary.md).
@@ -303,7 +303,7 @@ Chose the friction.
 
 ## Cost
 
-Nothing. Everything here runs locally. The cloud footprint in `infra/` arrives at M2, is destroyed in
+Nothing. Everything here runs locally. The cloud footprint in `infra/` arrives at M3, is destroyed in
 the same session it is created, and its spend is reported in the run log rather than estimated.
 
 ## Confidentiality

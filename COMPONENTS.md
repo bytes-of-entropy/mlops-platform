@@ -23,11 +23,11 @@ content: two places to describe the same YAML, which is one more than can stay a
 | `postgres/init/` | the first boot of an empty data volume → the Airflow database beside the platform one, and a salted fingerprint of the credentials that built it. Runs once and never again, which is why `make down` keeps volumes | First-boot SQL, mounted read-only. Creates the Airflow database alongside the platform one and records what the volume was initialised with, so a later start can tell a kept volume from a matching one. | M0 | built |
 | `images/` | `compose/` | Images the spine builds rather than pulls. One so far, and only because MLflow's published image ships neither of the drivers its own store flags accept (`docs/decisions/011`). Every `FROM` is pinned and a contract test reads the Dockerfile to check it. Multi-stage, non-root, SBOM and a CI scan step are M1; what exists now is the minimum that lets M0 start. | M0 | built |
 | `charts/` | none | Versioned Helm charts: Deployment, Service, Ingress, probes, HPA. No serving CRD (`docs/decisions/002`). | M2 | not started |
-| `infra/` | none | Terraform for the cloud footprint, with a destroy step in the runbook. | M2 | not started |
+| `infra/` | none | Terraform for the cloud footprint, with a destroy step in the runbook. | M3 | not started |
 
 ## Deferred, and why
 
-M3 (model registry and promotion), M4 (drift detection and retrain trigger) and M5 (canary and
+M4 (model registry and promotion), M5 (drift detection and retrain trigger) and M6 (canary and
 rollback) are deferred until two real workloads exist to promote, monitor and roll back. The
 reasoning is in `docs/decisions/001`. They land after the flagships, as dated additions.
 
