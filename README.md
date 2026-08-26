@@ -4,7 +4,10 @@ The local-first platform the two flagship repositories deploy onto: a Spark clus
 object storage, an MLflow tracking server, a scheduler and a metadata database, all reproducible on
 one machine, and the Kubernetes and Terraform footprint they run on in the cloud.
 
-**Status: M0, not closed.** The compose spine, its contract suite, a preflight that refuses a start
+**Status: M0 code complete, not closed; tagged `v0.1.0-rc.1`.** The pre-release suffix is the claim:
+everything M0 needs is committed, and the tier that would demonstrate it has not yet run green
+([`docs/decisions/014`](docs/decisions/014-milestones-are-tagged-as-semantic-versions.md)). `v0.1.0` is
+tagged at the commit where it does. The compose spine, its contract suite, a preflight that refuses a start
 which would come up healthy and wrong, and a smoke DAG that crosses the spine end to end are all in.
 The stack has now been started for the first time, on the build machine, and that first start found
 two defects nothing here could have caught by reading. Both were claims about what is *inside* a
@@ -259,20 +262,21 @@ make check    # the gate: formatting, ruff, mypy, the pre-commit hooks, then the
 Current output on the authoring machine, which has no container runtime:
 
 ```
-ruff format --check .   41 files already formatted
+ruff format --check .   42 files already formatted
 ruff check .            All checks passed!
 mypy                    Success: no issues found in 23 source files
 pre-commit --all-files  8 hooks, all Passed
-pytest                  107 passed, 11 skipped in 1.72s
+pytest                  109 passed, 11 skipped in 1.63s
 ```
 
-The formatter counts forty-one files and mypy counts twenty-three because they are looking at
-different things. There are twenty-four Python files; the formatter also reads the seventeen Markdown
-files, where it formats `python`-fenced code blocks and leaves prose alone. A code sample in this
-repository's documentation is therefore held to the same style as the code, which is the intended
-behaviour rather than a side effect worth suppressing. The linter's own file count is different again
-and neither is wrong: `ruff check` lints Python only, so it reads twenty-five paths: the twenty-four
-modules plus `pyproject.toml`, which it reads for its own configuration.
+The three tools report different file counts because they are looking at different things, and none of
+them is wrong. `mypy` checks the Python modules it is configured to check. `ruff format` reads those
+and the Markdown files as well, where it formats `python`-fenced code blocks and leaves prose alone, so
+a code sample in this repository's documentation is held to the same style as the code, which is
+intended rather than a side effect worth suppressing. `ruff check` lints Python only, plus
+`pyproject.toml`, which it reads for its own configuration. Those totals move with every file added, so
+they are not also written out in prose here: the block above is what the current tree prints, and it is
+the only place in this README that carries a count.
 
 The one Python file mypy does not check is the DAG. It imports Airflow, which lives in a pinned image
 rather than in these dev dependencies, so a type check here would report the framework as missing
