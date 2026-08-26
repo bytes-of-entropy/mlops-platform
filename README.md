@@ -4,11 +4,11 @@ The local-first platform the two flagship repositories deploy onto: a Spark clus
 object storage, an MLflow tracking server, a scheduler and a metadata database, all reproducible on
 one machine, and the Kubernetes and Terraform footprint they run on in the cloud.
 
-**Status: M0 code complete, not closed; tagged `v0.1.0-rc.1`.** The pre-release suffix is the claim:
-everything M0 needs is committed, and the tier that would demonstrate it has not yet run green
-([`docs/decisions/014`](docs/decisions/014-milestones-are-tagged-as-semantic-versions.md)). `v0.1.0` is
-tagged at the commit where it does. The compose spine, its contract suite, a preflight that refuses a start
-which would come up healthy and wrong, and a smoke DAG that crosses the spine end to end are all in.
+**Status: M0 closed, tagged `v0.1.0`.** The integration tier runs green end to end on a real machine:
+`120 passed, 0 skipped`, the six tests that start actual stacks included. The compose spine, its contract
+suite, a preflight that refuses a start which would come up healthy and wrong, and a smoke DAG that crosses
+the spine and is asserted at both ends, in MLflow and in Postgres, are all in and all demonstrated rather
+than asserted.
 The stack has now been started for the first time, on the build machine, and that first start found
 two defects nothing here could have caught by reading. Both were claims about what is *inside* a
 pinned image ([`docs/decisions/011`](docs/decisions/011-what-is-inside-an-image-is-a-claim.md)). Both
@@ -16,7 +16,7 @@ are fixed and neither is fixed by a rule that only reads the compose file. The f
 integration tier then found a third, this one in a test rather than in the stack: fixing the second had
 silently moved a supply-chain check off the pin it was there to watch
 ([`docs/decisions/012`](docs/decisions/012-a-built-tag-is-not-a-registry-fact.md)). M0 closes when the
-integration tier is green end to end, which it is not yet. Hardened images (M1: multi-stage, non-root,
+integration tier is green end to end, which it now is. Hardened images (M1: multi-stage, non-root,
 an SBOM and a scan step in CI), then Helm charts (M2) and Terraform (M3), are next; the one image built here is
 the minimum that lets M0 start, not the beginning of that work. Model registry, drift detection and
 canary rollout are deliberately deferred; see

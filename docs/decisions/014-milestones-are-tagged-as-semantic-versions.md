@@ -57,8 +57,33 @@ code change, settles this. My prediction, written before that run:
 
 ## Deciding evidence
 
-Empty. The run that settles it has not happened. This section is filled in a later commit that does not
-touch the Prediction above, and if the prediction is wrong the wrong prediction stays.
+The tier ran on the build machine on 2026-08-25 and reached `120 passed, 0 skipped`. M0 is closed and
+`v0.1.0` is tagged. Scoring the four predictions above, none of which has been edited:
+
+- **`120 passed, 0 skipped` on the first attempt: predicted at about 40%, and it did not happen.** The first
+  attempt returned `118 passed, 2 skipped in 267.77s`, with zero failures and zero errors. The shortfall was
+  not in the tier at all: two preflight tests execute the Postgres init script and compare its digest against
+  the Python implementation's, and they skip without `sh`, `sha256sum` and `od`. Git for Windows ships all
+  three, and PowerShell did not have that directory on `PATH`. Adding it made both run, and the next full run
+  reached the pass condition. So the number was missed, for a reason the prediction was not about, and the
+  honest reading is that it was wrong rather than nearly right.
+- **Airflow not shipping `psycopg2`, predicted at about 35% as the most likely single failure: refuted.**
+  `docker run --rm apache/airflow:2.9.2-python3.11 python -c "import psycopg2; print(psycopg2.__version__)"`
+  returns `2.9.9 (dt dec pq3 ext lo64)`. The reasoning was sound, since the identical assumption was false for
+  MLflow and produced record 011, and the conclusion was still wrong.
+- **The two unexplained skips being accounting rather than a defect, predicted at about 75%: correct as to
+  class, wrong as to identification.** They were accounting. They were not the Makefile-parity skip this
+  record guessed at; they were the two POSIX-shell tests above, a different mechanism reached by a different
+  route.
+- **No Spark failure: correct.** None occurred, and the `UnknownHostException` from the first run did not
+  recur once the port collision was gone, which is what record 013 said of it.
+
+One of four clean, one refuted, one half right, one missed. That distribution is why this section is worth
+more than a summary written afterwards would have been.
+
+The `v0.1.0-rc.1` tag stays where it is rather than being deleted. It is the record that M0 was code complete
+before it was demonstrated, and removing it would destroy the only evidence that the distinction was drawn in
+advance rather than claimed after the fact.
 
 ## What would change my mind
 

@@ -5,10 +5,11 @@ a machine that has never run any of it. There is no companion note and nothing t
 file. The procedure is the same everywhere; the commands are written for PowerShell on Windows,
 because that is where it is executed, and every one of them has a `make` equivalent named beside it.
 
-Read once before starting: **nothing in section 6 has ever completed anywhere.** The gate in section 5
-is measured and reproducible. The integration tier has been started far enough to find three defects
-and has not yet run green end to end, which is exactly the state M0 closes out of. A failure there is
-information about the compose contract, not evidence of a bad clone; record it before fixing it.
+Read once before starting: **every step below has now completed on a real machine**, and the whole
+procedure is measured rather than derived. Getting there found four defects, three of them in healthchecks
+rather than in the services they probed and one in the tier's own host ports, and each is a troubleshooting
+entry in section 8. A failure here is still information about the compose contract rather than evidence of a
+bad clone, so record it before fixing it.
 
 1. [Get the code](#1-get-the-code)
 2. [Prerequisites](#2-prerequisites)
@@ -99,6 +100,20 @@ broken repository rather than like a wrong location:
 | Python | 3.11–3.12 | `pyproject.toml` declares `>=3.11,<3.13` | `py -3 -V` |
 | A container runtime | Docker Desktop with the WSL2 backend | everything in section 6 | `docker version` |
 | GNU Make | optional | unskips one Makefile-parity test; CI runs the Makefile regardless | `make --version` |
+| `sh`, `sha256sum`, `od` | **required for a zero-skip run** | two preflight tests execute the Postgres init script and compare its digest against the Python one; without a POSIX shell they skip by name | `sh --version` |
+
+**On that last row, because it costs a confusing half hour otherwise.** Git for Windows already ships all
+three, in `usr\bin` beside the installation, but PowerShell does not have that directory on `PATH`, so a run
+from PowerShell skips those two tests and reports `118 passed, 2 skipped` with everything else green. Add it
+for the session and they run:
+
+```powershell
+$gitUsrBin = Join-Path (Split-Path (Split-Path (Get-Command git).Source)) 'usr\bin'
+$env:PATH = "$gitUsrBin;$env:PATH"
+```
+
+The skip is correct behaviour on a host that genuinely lacks a shell; it is only misleading on a host that
+has one and cannot see it.
 
 Set the commit identity **per repository rather than globally**, before the first commit:
 
@@ -368,7 +383,7 @@ otherwise.
 | `pre-commit run --all-files` | 8 lines, each `Passed`; no summary line |
 | `pytest`, no runtime | `109 passed, 11 skipped` |
 | `pytest`, runtime but no credentials | `114 passed, 6 skipped`, derived rather than measured |
-| `pytest`, runtime and credentials | `120 passed, 0 skipped`, derived rather than measured; the M0 pass condition |
+| `pytest`, runtime and credentials | `120 passed, 0 skipped`, **measured on the build machine**; the M0 pass condition |
 | `docker images mlops-platform/mlflow` | one row, tag `2.13.0`, after `build` |
 | `make doctor` | three checks (`container runtime`, `credentials`, `postgres volume`), each `OK`, except that the volume check reports it cannot verify a volume created before the fingerprint existed |
 
@@ -382,10 +397,15 @@ resolves, which needs a docker client); three idempotency tests; and three that 
 The last six need credentials as well as a runtime, which is why the middle row drops six rather than
 three.
 
-**The best result the tier has produced so far** is `3 failed, 110 passed, 2 skipped, 3 errors in
-190.24s`, on the build machine, with every one of the six failures caused by host ports already being
-bound. It is recorded here because it is the current honest ceiling, not a target: the row above it is
-the pass condition.
+**Every row above assumes `sh`, `sha256sum` and `od` are reachable.** Without them, subtract two from the
+passed count and add two to the skipped count in each row: those two preflight tests are gated on a POSIX
+shell rather than on a runtime, so no amount of Docker unskips them.
+
+**The tier reached the pass condition on the build machine**: `120 passed, 0 skipped`. Two earlier runs are
+worth keeping beside it, because both were misread at the time. `3 failed, 110 passed, 2 skipped, 3 errors in
+190.24s` was the first, and all six of those failures traced to host ports already being bound rather than to
+six separate defects. Then `118 passed, 2 skipped in 267.77s`, which was a fully green tier whose two
+remaining skips looked like a tier problem and were the `PATH` gap described in section 3.
 
 ## 8. Troubleshooting by symptom
 
