@@ -3,7 +3,7 @@
 - **Date:** 2026-08-18
 - **Status:** accepted
 - **Component:** `charts/`
-- **Milestone:** r3-m2
+- **Milestone:** M2
 
 ## Context
 

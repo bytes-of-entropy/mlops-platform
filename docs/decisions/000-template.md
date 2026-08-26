@@ -3,7 +3,7 @@
 - **Date:** YYYY-MM-DD
 - **Status:** proposed | accepted | superseded by NNN
 - **Component:** <folder this binds, or repo-wide>
-- **Milestone:** <e.g. r3-m2>
+- **Milestone:** <e.g. M2>
 
 ## Context
 

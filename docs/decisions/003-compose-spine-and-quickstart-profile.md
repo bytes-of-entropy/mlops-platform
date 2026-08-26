@@ -3,7 +3,7 @@
 - **Date:** 2026-08-18
 - **Status:** accepted
 - **Component:** `compose/`
-- **Milestone:** r3-m0
+- **Milestone:** M0
 
 ## Context
 

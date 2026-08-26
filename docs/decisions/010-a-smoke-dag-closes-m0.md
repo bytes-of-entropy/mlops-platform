@@ -3,7 +3,7 @@
 - **Date:** 2026-08-23
 - **Status:** accepted
 - **Component:** `airflow/dags/`, `tests/`
-- **Milestone:** r3-m0
+- **Milestone:** M0
 
 ## Context
 
