@@ -53,8 +53,16 @@ ignored rather than committed: it hardcodes its own absolute path in `pyvenv.cfg
 besides. Section 6 builds one as its first command. The same goes for `.env`, the images and the
 volumes. Nothing machine-specific or generated travels in a bundle.
 
-**If a clone already exists, bring it forward rather than re-cloning.** A bundle is fetched by *path*,
-so it does not matter that `origin` was removed:
+**A clone made before 2026-08-25 cannot be brought forward and has to be replaced.** This
+repository's history was rewritten on that date. Every file in the tree is identical, but no commit id
+is, so an older clone shares no ancestor with this bundle: the `git fetch` below will succeed and the
+`git merge --ff-only` will then refuse, for want of a common ancestor. That refusal is not the
+"clone has local commits" case in the next paragraph and forcing it is not the fix. Delete the old
+working copy and clone the bundle fresh. Comparing `git rev-parse HEAD` in the old clone against the
+HEAD row in the bundle facts block is how to tell which side you are on before you start.
+
+**Otherwise, if a clone already exists, bring it forward rather than re-cloning.** A bundle is fetched
+by *path*, so it does not matter that `origin` was removed:
 
 ```powershell
 git fetch <path-to>\mlops-platform.bundle main:refs/remotes/bundle/main
@@ -92,8 +100,18 @@ broken repository rather than like a wrong location:
 | A container runtime | Docker Desktop with the WSL2 backend | everything in section 6 | `docker version` |
 | GNU Make | optional | unskips one Makefile-parity test; CI runs the Makefile regardless | `make --version` |
 
-Set `git config --global user.name` and `user.email` before the first commit, or the pre-commit hooks
-run against an identity that does not exist.
+Set the commit identity **per repository rather than globally**, before the first commit:
+
+```powershell
+git config user.name  "bytes-of-entropy"
+git config user.email "204384232+bytes-of-entropy@users.noreply.github.com"
+```
+
+Every commit already in this history carries that identity. Setting it locally keeps this repository
+right without disturbing whatever global identity the machine uses for unrelated work, which is the
+case worth guarding: a machine whose global identity belongs to an employer will otherwise sign these
+commits with it. The address is GitHub's no-reply form for the account, so commits attribute to the
+profile without publishing a mailbox. Skip this and the history acquires a second author.
 
 ### What is deliberately not installed
 
@@ -345,12 +363,12 @@ otherwise.
 | Command | Expected output |
 | --- | --- |
 | `ruff check .` | `All checks passed!` for 25 paths: the 24 modules plus `pyproject.toml`, read for configuration |
-| `ruff format --check .` | `41 files already formatted`, covering 24 Python and 17 Markdown; the formatter handles both |
+| `ruff format --check .` | `42 files already formatted`, covering 24 Python and 18 Markdown; the formatter handles both |
 | `mypy` | `Success: no issues found in 23 source files` |
 | `pre-commit run --all-files` | 8 lines, each `Passed`; no summary line |
-| `pytest`, no runtime | `107 passed, 11 skipped` |
-| `pytest`, runtime but no credentials | `112 passed, 6 skipped`, derived rather than measured |
-| `pytest`, runtime and credentials | `118 passed, 0 skipped`, derived rather than measured; the M0 pass condition |
+| `pytest`, no runtime | `109 passed, 11 skipped` |
+| `pytest`, runtime but no credentials | `114 passed, 6 skipped`, derived rather than measured |
+| `pytest`, runtime and credentials | `120 passed, 0 skipped`, derived rather than measured; the M0 pass condition |
 | `docker images mlops-platform/mlflow` | one row, tag `2.13.0`, after `build` |
 | `make doctor` | three checks (`container runtime`, `credentials`, `postgres volume`), each `OK`, except that the volume check reports it cannot verify a volume created before the fingerprint existed |
 
@@ -510,13 +528,17 @@ condition in section 6 and only there.
 The collected item count identifies the working tree faster than reading the log:
 
 ```powershell
-.venv\Scripts\python.exe -m pytest --collect-only -q | Select-Object -Last 3
+.venv\Scripts\python.exe -m pytest --collect-only | Select-Object -Last 1
 git rev-list --count HEAD
 git log -1 --format='%h %s'
 ```
 
-The tree that ships this file collects 118 items. Anything else is a working tree somewhere in the
+The tree that ships this file collects 120 items. Anything else is a working tree somewhere in the
 middle, and re-running it will keep producing whatever it produced before.
+
+The `-q` flag is deliberately absent from that first command. With it, `--collect-only` prints one line
+per test file and no total, so the number this section asks you to compare against is not in the output
+at all; without it, the last line is the total.
 
 ### `test_the_scheduler_registers_the_dag_without_an_import_error` fails
 
