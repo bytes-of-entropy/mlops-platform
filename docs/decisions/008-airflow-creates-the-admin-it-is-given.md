@@ -66,9 +66,22 @@ None from a running stack: this machine has no container runtime. The mechanism 
 image's entrypoint documentation and from the 2.9.2 source of `create_admin_standalone`, which reads
 `find_user("admin")` and writes the generated password under `AIRFLOW_HOME`. The compose-side rule
 was verified by deleting `_AIRFLOW_WWW_USER_CREATE` and confirming the failure names the service,
-the variable and the missing flag. The first successful login on the build machine is the
-outstanding confirmation, and until it happens this record's claim is about the mechanism rather
-than about the stack.
+the variable and the missing flag. The first successful login on the build machine was the
+outstanding confirmation, and it arrived on 2026-08-25: the credentials in `.env` reach
+`localhost:8082/home`, so the account Airflow created is the one it was given.
+
+**The negative half is the half worth having, and it also passed.** `airflow` / `airflow` is refused.
+That distinguishes the two outcomes this record could not tell apart from the mechanism alone: an
+account created *instead of* a default, which is what was intended, against one created *alongside*
+a default, which would leave a known credential pair on a service that M2 puts behind an Ingress. A
+successful login on its own could not have separated those, which is why the failing login is the
+result that settles it.
+
+Both halves were checked by hand, and neither is asserted by a test. That gap belongs to M1, where the
+image and CI hardening lives, rather than to M0: a default-credential check is a regression guard on a
+property already established, not a defect being fixed, so it does not reopen a closed milestone. What
+it guards against is specific and plausible: a future compose or chart change reintroducing the
+standalone admin path without anyone noticing, because nothing currently fails when it does.
 
 ## What would change my mind
 
