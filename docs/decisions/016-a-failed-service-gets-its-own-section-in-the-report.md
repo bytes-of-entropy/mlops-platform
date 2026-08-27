@@ -57,9 +57,24 @@ than more precisely.
 
 ## Deciding evidence
 
-Empty until a failure report is produced with this in place. It will be, because the provisioner fix in
-record 015 is unverified: if that fails again, this is what should make the reason legible without a
-question. Filled in a later commit that does not touch the Prediction above.
+Half settled, and the half that matters is not.
+
+**"No test outcome changes": confirmed.** The build machine reached `124 passed, 0 skipped` on 2026-08-26.
+The suite is identical with this in place, which is what the high-confidence half of the prediction claimed.
+
+**"Roughly 20% the JSON parsing is wrong": unsettled, and unsettled for a reason worth naming.**
+`exited_badly()` is reached only from `diagnostics()`, and `diagnostics()` is reached only when `up` has
+already refused. Nothing failed, so **this code has never executed**, and the run that proves the
+provisioner works is exactly the run that cannot exercise the report describing its failure. That is not
+bad luck; it is the structural property of diagnostic code, which runs least often when the system is
+healthiest and is most needed when it is not.
+
+The prediction therefore stands open rather than being closed by association with a green suite. This
+record is not settled by the next green run either, only by a red one, and it may sit open for a long time.
+**That is preferable to recording a pass it did not earn.** The alternative — a test that forces a failure
+to exercise the path — is a real option and was not taken here, because writing it after a green run is
+work at the wrong milestone (`REPO_ROADMAPS.md` §8: no further scaffolding before the flagship produces a
+number). It is the obvious first thing to add the next time this repository is open for work.
 
 ## What would change my mind
 

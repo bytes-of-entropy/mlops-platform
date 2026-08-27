@@ -118,6 +118,18 @@ Verified locally after the change: `ruff`, `ruff format`, `mypy` over 24 files, 
 skipped` across 124 collected. The container behaviour is again unverified, which is the honest position:
 this is the second attempt at a step no machine here can execute.
 
+**The second attempt ran green.** The build machine reported `124 passed, 0 skipped` on 2026-08-26: the
+provisioner created the bucket, MLflow started behind `service_completed_successfully`, and
+`test_an_artifact_round_trips_through_minio` logged an artifact through the MLflow client, read the object
+back out of MinIO with `boto3` and compared the bytes. **The artifact path has now been walked**, which is
+the sentence this record existed to make true and the one a green M0 could not have produced.
+
+Two things follow that are worth separating from the pass itself. `MC_HOST_spine` is now permanently
+unsettled rather than temporarily so: `mc` is gone, so the prediction about it can never be scored, and it
+is recorded as unresolved rather than quietly dropped. And the count matched the number
+`docs/SETUP.md` had derived for it in advance, `124`, which is the first time a derived row in that table
+has been checked against a real run.
+
 ## What would change my mind
 
 For the provisioner: a second consumer needing a bucket with different credentials, which would argue for

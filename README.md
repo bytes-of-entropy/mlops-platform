@@ -4,8 +4,11 @@ The local-first platform the two flagship repositories deploy onto: a Spark clus
 object storage, an MLflow tracking server, a scheduler and a metadata database, all reproducible on
 one machine, and the Kubernetes and Terraform footprint they run on in the cloud.
 
-**Status: M0 closed, tagged `v0.1.0`.** The integration tier runs green end to end on a real machine:
-`120 passed, 0 skipped`, the six tests that start actual stacks included. The compose spine, its contract
+**Status: M0 closed, tagged `v0.1.0`; the tier has since been strengthened and is green again at
+`v0.1.2`.** The integration tier runs end to end on a real machine: `120 passed, 0 skipped` at the commit
+that closed M0, and `124 passed, 0 skipped` at `v0.1.2`, the eight tests that start actual stacks included.
+The four added tests are there because the first green tier passed over a real defect, and two of them walk
+the artifact path that tier never touched. The compose spine, its contract
 suite, a preflight that refuses a start which would come up healthy and wrong, and a smoke DAG that crosses
 the spine and is asserted at both ends, in MLflow and in Postgres, are all in and all demonstrated rather
 than asserted.

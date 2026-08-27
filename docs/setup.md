@@ -383,13 +383,15 @@ otherwise.
 | `pre-commit run --all-files` | 8 lines, each `Passed`; no summary line |
 | `pytest`, no runtime | `111 passed, 13 skipped` |
 | `pytest`, runtime but no credentials | `116 passed, 8 skipped`, derived rather than measured |
-| `pytest`, runtime and credentials | `124 passed, 0 skipped`, derived rather than measured; the M0 pass condition |
+| `pytest`, runtime and credentials | `124 passed, 0 skipped`, measured on the build machine at `v0.1.2`; the M0 pass condition |
 | `docker images mlops-platform/mlflow` | one row, tag `2.13.0`, after `build` |
 | `make doctor` | three checks (`container runtime`, `credentials`, `postgres volume`), each `OK`, except that the volume check reports it cannot verify a volume created before the fingerprint existed |
 
-Only the first `pytest` row is measured; the other two are derived from which guard each test carries,
-because the authoring machine cannot produce them. If a run disagrees with the row it should be on,
-**that disagreement is the finding**. Record it before fixing it.
+The first and last `pytest` rows are measured; the middle one is derived from which guard each test
+carries, because the authoring machine cannot produce it. If a run disagrees with the row it should be on,
+**that disagreement is the finding**. Record it before fixing it. The last row was derived before it was
+measured and the measurement matched it exactly, which is the only reason the derivation is worth trusting
+for the row that still has none.
 
 The eleven skips divide as five image-resolution checks, one per registry reference: the four tags
 the spine pulls plus the base the one built image comes from (they ask a registry whether each still
@@ -401,7 +403,7 @@ three.
 passed count and add two to the skipped count in each row: those two preflight tests are gated on a POSIX
 shell rather than on a runtime, so no amount of Docker unskips them.
 
-**The tier reached the pass condition on the build machine**: `120 passed, 0 skipped`, at the commit tagged `v0.1.0`. The count has moved since, to a derived `124`: the two artifact-store tests and two compose-contract tests were added by `docs/decisions/015`, so the last measured total and the current expected total are deliberately different numbers. Two earlier runs are
+**The tier reached the pass condition on the build machine twice**: `120 passed, 0 skipped` at the commit tagged `v0.1.0`, and `124 passed, 0 skipped` at `v0.1.2`, after `docs/decisions/015` added two artifact-store tests and two compose-contract tests. The second run is the stronger evidence: the first passed while a configured artifact root pointed at a bucket nothing created, because no test then walked that path. Two earlier runs are
 worth keeping beside it, because both were misread at the time. `3 failed, 110 passed, 2 skipped, 3 errors in
 190.24s` was the first, and all six of those failures traced to host ports already being bound rather than to
 six separate defects. Then `118 passed, 2 skipped in 267.77s`, which was a fully green tier whose two
