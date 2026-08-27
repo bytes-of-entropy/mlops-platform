@@ -378,12 +378,12 @@ otherwise.
 | Command | Expected output |
 | --- | --- |
 | `ruff check .` | `All checks passed!` for 25 paths: the 24 modules plus `pyproject.toml`, read for configuration |
-| `ruff format --check .` | `43 files already formatted`, covering 24 Python and 19 Markdown; the formatter handles both |
-| `mypy` | `Success: no issues found in 23 source files` |
+| `ruff format --check .` | `47 files already formatted`, Python and Markdown; the formatter handles both |
+| `mypy` | `Success: no issues found in 24 source files` |
 | `pre-commit run --all-files` | 8 lines, each `Passed`; no summary line |
-| `pytest`, no runtime | `111 passed, 13 skipped` |
-| `pytest`, runtime but no credentials | `116 passed, 8 skipped`, derived rather than measured |
-| `pytest`, runtime and credentials | `124 passed, 0 skipped`, measured on the build machine at `v0.1.2`; the M0 pass condition |
+| `pytest`, no runtime | `115 passed, 13 skipped` |
+| `pytest`, runtime but no credentials | `120 passed, 8 skipped`, derived rather than measured |
+| `pytest`, runtime and credentials | `128 passed, 0 skipped`; the M0 pass condition. `124 passed, 0 skipped` was measured at `v0.1.2` and four classifier tests have landed since, so this row is derived from a measurement rather than being one |
 | `docker images mlops-platform/mlflow` | one row, tag `2.13.0`, after `build` |
 | `make doctor` | three checks (`container runtime`, `credentials`, `postgres volume`), each `OK`, except that the volume check reports it cannot verify a volume created before the fingerprint existed |
 
@@ -453,6 +453,29 @@ was given, when you want to reach it.
 Start Docker Desktop and wait for it to settle. If it is already running, that is worth reporting
 rather than retrying. The check distinguishes "not installed" from "not running", so its message says
 which it saw.
+
+### `Error response from daemon: Docker Desktop is unable to start`
+
+Docker Desktop is part-way up: far enough to answer the client, not far enough to run a container. On
+Windows that is usually the WSL 2 backend rather than Docker itself, and the same broken WSL shows up
+elsewhere as `execvpe(/bin/bash) failed: No such file or directory` from a bare `bash`, which is WSL's
+`bash.exe` finding no distribution to run. Check that side first:
+
+```powershell
+wsl --status
+wsl --list --verbose      # docker-desktop should be listed and Running once Desktop is up
+wsl --update
+```
+
+Docker Desktop ships its own `docker-desktop` distribution, so a working WSL kernel is needed but a
+Linux distribution of your own is not. `wsl --install --no-distribution` installs the kernel alone.
+
+**This state used to produce eight failures rather than eight skips.** `docker info` answered, exited
+zero and printed an empty server version, so the runtime probe called it ready and the whole
+integration tier ran against a daemon that could not start anything. The probe now requires a server
+version and not merely a zero exit, because only a running daemon can supply one, so this machine
+state skips with a reason naming it. If you see the tier fail rather than skip on a Desktop that will
+not start, that is a finding and the probe is wrong again.
 
 ### The doctor refuses: `credentials`
 

@@ -25,21 +25,33 @@ DOCKER_READY = "ready"
 SKIP_REASONS = {
     DOCKER_ABSENT: "no container runtime on this machine; run on the build machine",
     DOCKER_STOPPED: (
-        "docker is installed but its daemon did not answer; start Docker Desktop or dockerd "
-        "and re-run"
+        "docker is installed but no daemon answered with a server version; start Docker Desktop "
+        "or dockerd and re-run. A Desktop stuck part-way up answers the client and reports no "
+        "server, which counts as stopped here"
     ),
 }
 
 
-def classify_docker_state(binary: str | None, probe_exit_code: int | None) -> str:
+def classify_docker_state(
+    binary: str | None, probe_exit_code: int | None, server_version: str | None
+) -> str:
     """Turn what we observed into one of three states.
 
     Separated from the probe so the classification is testable without a daemon to start and
-    stop. ``probe_exit_code`` is ``None`` when the probe could not be run or did not return.
+    stop. ``probe_exit_code`` is ``None`` when the probe could not be run or did not return, and
+    ``server_version`` is whatever the probe printed, which is the half the exit code misses.
+
+    An exit code of zero is not enough on its own. A Docker Desktop stuck part-way up answers the
+    client, exits zero and prints an empty server version, so a check on the code alone calls it
+    ready, the integration tier runs, and every test in it fails on `Error response from daemon:
+    Docker Desktop is unable to start`. Eight failures that read as a broken stack, for a stopped
+    one. The server version is the thing only a running daemon can supply, so it is what decides.
     """
     if binary is None:
         return DOCKER_ABSENT
     if probe_exit_code != 0:
+        return DOCKER_STOPPED
+    if not (server_version or "").strip():
         return DOCKER_STOPPED
     return DOCKER_READY
 
@@ -52,23 +64,27 @@ def probe_docker() -> str:
     presence check marks the integration tests as runnable and they then fail on a connection
     error, which reads like a broken repository rather than a stopped service.
 
-    ``docker info`` is the cheapest command that requires the daemon to answer.
+    ``docker info`` is the cheapest command that requires the daemon to answer, and the server
+    version it is asked for is read rather than discarded: see ``classify_docker_state`` for the
+    state in which the code says yes and the version says no.
     """
     binary = shutil.which("docker")
     if binary is None:
-        return classify_docker_state(None, None)
+        return classify_docker_state(None, None, None)
     try:
         completed = subprocess.run(  # noqa: S603 (fixed argv, resolved path, no shell)
             [binary, "info", "--format", "{{.ServerVersion}}"],
             capture_output=True,
+            text=True,
+            encoding="utf-8",
             timeout=DAEMON_PROBE_TIMEOUT_SECONDS,
             check=False,
         )
     except (OSError, subprocess.SubprocessError):
         # Includes TimeoutExpired: a daemon that has not answered in 20 seconds is not one these
         # checks can use, and the distinction between slow and stopped does not change the advice.
-        return classify_docker_state(binary, None)
-    return classify_docker_state(binary, completed.returncode)
+        return classify_docker_state(binary, None, None)
+    return classify_docker_state(binary, completed.returncode, completed.stdout)
 
 
 # The fourth place in this repository that builds a compose invocation, and the reason
