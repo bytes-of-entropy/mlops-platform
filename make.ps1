@@ -19,19 +19,24 @@ $Py = '.venv/Scripts/python.exe'
 $BootstrapPy = 'py'
 # Kept in step with WAIT_TIMEOUT in the Makefile; a test fails if the two diverge.
 $WaitTimeout = '300'
-# Kept in step with the Makefile's SYFT, GRYPE, SBOM_DIR and SCAN_FAIL_ON; a test fails if the
-# cataloguer versions diverge, because two machines pinning different cataloguers produce two
-# inventories and only one of them is in the diff.
-$Syft = 'anchore/syft:v1.9.0'
-$Grype = 'anchore/grype:v0.79.0'
+# Kept in step with the Makefile's five supply settings; a test fails if they diverge, because two
+# machines pinning different cataloguers produce two inventories and only one is in the diff. Both
+# tools are digest-pinned and both carry an expiry: a scanner is only as good as a database that must
+# be fresh, and its publisher retires the schema old versions speak, so a pin that is merely exact
+# stops working rather than merely ageing. Record 020 argues it.
+# SUPPLY_TOOLS_EXPIRE: 2027-02-28
+$Syft = 'anchore/syft:v1.51.1@sha256:95fe0835e5bebc6f8b1f8acef68d47d63d594ef4c0f25c097ff853b23cbac74c'
+$Grype = 'anchore/grype:v0.118.0@sha256:8a93fc48da96bd6ec5981279d099b69de11541dc68fdf222fb9161f8ff284af7'
 $SbomDir = 'sbom'
 $ScanFailOn = 'high'
+$GrypeDbVolume = 'mlops-platform-grype-db'
 # Mirrors the Makefile's `?=`. Kept as four separate overrides after the defaults rather than folded
 # into them, so the line a reader looks at to learn the pinned version is still a plain assignment.
 if ($env:SYFT) { $Syft = $env:SYFT }
 if ($env:GRYPE) { $Grype = $env:GRYPE }
 if ($env:SBOM_DIR) { $SbomDir = $env:SBOM_DIR }
 if ($env:SCAN_FAIL_ON) { $ScanFailOn = $env:SCAN_FAIL_ON }
+if ($env:GRYPE_DB_VOLUME) { $GrypeDbVolume = $env:GRYPE_DB_VOLUME }
 
 function Invoke-Checked {
     param([string]$Exe, [string[]]$Arguments)
@@ -52,7 +57,7 @@ switch ($Target) {
         Write-Output 'doctor          check the machine can start the stack, and say what is wrong'
         Write-Output 'build           build the one image in the spine, without starting anything'
         Write-Output 'sbom            catalogue every image and write the reviewable inventories'
-        Write-Output 'scan            scan the catalogued SBOMs and fail on high or above'
+        Write-Output 'scan            report the database build date, then scan and fail on high+'
         Write-Output 'up              start the full spine (all services)'
         Write-Output 'up-quickstart   start the 4 GB / 2 CPU reviewer profile'
         Write-Output 'down            stop and remove containers, KEEP volumes'
@@ -120,6 +125,13 @@ switch ($Target) {
         # Reads the SBOM rather than the image, so what is scanned is what was inventoried.
         $mount = ($PWD.Path -replace '\\', '/') + "/$SbomDir"
         $documents = @(Get-ChildItem -Path $SbomDir -Filter '*.spdx.json' -ErrorAction Ignore)
+        # The database build date, before any finding. A scan result is a function of the
+        # scanner, the database and the SBOM, and only the third is visible in the output. The
+        # named volume also means one download rather than one per document.
+        Invoke-Checked 'docker' @(
+            'run', '--rm', '-v', "${GrypeDbVolume}:/db", '-e', 'GRYPE_DB_CACHE_DIR=/db',
+            $Grype, 'db', 'status'
+        )
         if (-not $documents) { throw "no SBOMs in $SbomDir; run './make.ps1 sbom' first" }
         foreach ($document in $documents) {
             Write-Output "scanning $($document.Name)"
@@ -128,6 +140,7 @@ switch ($Target) {
             $gate = if ($ScanFailOn -eq 'none') { @() } else { @('--fail-on', $ScanFailOn) }
             Invoke-Checked 'docker' (@(
                 'run', '--rm', '-v', "${mount}:/sbom",
+                '-v', "${GrypeDbVolume}:/db", '-e', 'GRYPE_DB_CACHE_DIR=/db',
                 $Grype, "sbom:/sbom/$($document.Name)"
             ) + $gate)
         }

@@ -21,20 +21,35 @@ endif
 # would have said why. Bounded, it exits nonzero and ``make logs`` still works.
 WAIT_TIMEOUT := 300
 
-# Two cataloguers, run as containers so a reviewer installs nothing to reproduce a scan, and pinned
-# by tag with their digests owed exactly as the spine's were before record 018 closed that gap.
+# Two cataloguers, run as containers so a reviewer installs nothing to reproduce a scan. Both write
+# into $(SBOM_DIR) through a bind mount rather than through a shell redirect: the Windows mirror
+# cannot redirect a JSON stream without deciding an encoding for it, and the two entrypoints
+# producing byte-different documents from the same image would defeat the point.
 #
 # `?=`, not `:=`: the committed value is the default and the environment can override it, which is
 # what makes an exploratory scan possible without editing a tracked file. `SCAN_FAIL_ON=none` is the
 # one that matters -- the first scan of an image nobody has scanned wants the whole finding table,
-# not a gate that stops at the first High. A mirror test asserts make.ps1 honours the same four.
-# Both write into $(SBOM_DIR) through a bind mount rather than through a shell redirect: the
-# Windows mirror cannot redirect a JSON stream without deciding an encoding for it, and the two
-# entrypoints producing byte-different documents from the same image would defeat the point.
-SYFT         ?= anchore/syft:v1.9.0
-GRYPE        ?= anchore/grype:v0.79.0
-SBOM_DIR     ?= sbom
-SCAN_FAIL_ON ?= high
+# not a gate that stops at the first High. A mirror test asserts make.ps1 honours all five.
+#
+# GRYPE_DB_VOLUME is a named volume for the vulnerability database. Without it every invocation
+# downloads the whole database again, because `--rm` discards the container filesystem: six
+# documents, six downloads. The cache directory is named explicitly rather than left to the image's
+# default, so a change of base image cannot move it silently.
+#
+# Both tools are digest-pinned, and both carry an EXPIRY, which no other pin in this repository has.
+# A scanner is not like an image. An image pinned to old bytes is old and still works; a scanner is
+# only as good as a vulnerability database that must be fresh by definition, and its publisher
+# retires the database schema that old versions speak. The first pin here was on the wrong side of
+# such a retirement, so grype refused to run at all -- correctly, and only on a machine with a
+# daemon, which is the worst place for a laptop-checkable fact to hide. The expiry is how a test
+# says so without one. Record 020 argues it; renewing means the version, the digest and this date,
+# edited together.
+# SUPPLY_TOOLS_EXPIRE: 2027-02-28
+SYFT            ?= anchore/syft:v1.51.1@sha256:95fe0835e5bebc6f8b1f8acef68d47d63d594ef4c0f25c097ff853b23cbac74c
+GRYPE           ?= anchore/grype:v0.118.0@sha256:8a93fc48da96bd6ec5981279d099b69de11541dc68fdf222fb9161f8ff284af7
+SBOM_DIR        ?= sbom
+SCAN_FAIL_ON    ?= high
+GRYPE_DB_VOLUME ?= mlops-platform-grype-db
 
 .PHONY: help setup test lint fmt hooks check doctor build sbom scan up up-quickstart down clean reset ps logs config
 
@@ -47,7 +62,7 @@ help:
 	@echo "doctor          check the machine can start the stack, and say what is wrong"
 	@echo "build           build the one image in the spine, without starting anything"
 	@echo "sbom            catalogue every image and write the reviewable inventories"
-	@echo "scan            scan the catalogued SBOMs and fail on $(SCAN_FAIL_ON) or above"
+	@echo "scan            report the database build date, then scan and fail on $(SCAN_FAIL_ON)+"
 	@echo "up              start the full spine (all services)"
 	@echo "up-quickstart   start the 4 GB / 2 CPU reviewer profile"
 	@echo "down            stop and remove containers, KEEP volumes"
@@ -130,11 +145,15 @@ sbom:
 scan:
 	@ls $(SBOM_DIR)/*.spdx.json >/dev/null 2>&1 || \
 	  { echo "no SBOMs in $(SBOM_DIR); run 'make sbom' first"; exit 1; }
+	@docker run --rm -v $(GRYPE_DB_VOLUME):/db -e GRYPE_DB_CACHE_DIR=/db \
+	  $(GRYPE) db status || \
+	  { echo "the vulnerability database would not load; see docs/decisions/020"; exit 1; }
 	@gate="--fail-on $(SCAN_FAIL_ON)"; \
 	if [ "$(SCAN_FAIL_ON)" = "none" ]; then gate=""; fi; \
 	for document in $(SBOM_DIR)/*.spdx.json; do \
 	  echo "scanning $$document"; \
 	  docker run --rm -v "$$PWD/$(SBOM_DIR):/sbom" \
+	    -v $(GRYPE_DB_VOLUME):/db -e GRYPE_DB_CACHE_DIR=/db \
 	    $(GRYPE) "sbom:/sbom/$$(basename $$document)" $$gate || exit 1; \
 	done
 

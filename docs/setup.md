@@ -104,7 +104,7 @@ broken repository rather than like a wrong location:
 
 **On that last row, because it costs a confusing half hour otherwise.** Git for Windows already ships all
 three, in `usr\bin` beside the installation, but PowerShell does not have that directory on `PATH`, so a run
-from PowerShell skips those twenty tests and reports `176 passed, 34 skipped` with everything else green. Add it
+from PowerShell skips those twenty tests and reports `181 passed, 34 skipped` with everything else green. Add it
 for the session and they run:
 
 ```powershell
@@ -378,13 +378,13 @@ otherwise.
 | Command | Expected output |
 | --- | --- |
 | `ruff check .` | `All checks passed!` for 35 paths: the 34 modules plus `pyproject.toml`, read for configuration |
-| `ruff format --check .` | `58 files already formatted`: 34 Python and 25 Markdown, less `.pytest_cache/README.md`, which is ignored by git and therefore by the formatter |
+| `ruff format --check .` | `59 files already formatted`: 34 Python and 26 Markdown, less `.pytest_cache/README.md`, which is ignored by git and therefore by the formatter |
 | `mypy` | `Success: no issues found in 32 source files` |
 | `pre-commit run --all-files` | 8 lines, each `Passed`; no summary line |
-| `pytest`, no runtime | `196 passed, 14 skipped` |
-| `pytest`, runtime but no credentials | `201 passed, 9 skipped`, derived rather than measured |
-| `pytest`, runtime and credentials, before `make sbom` | `209 passed, 1 skipped`, derived. `140 passed, 0 skipped` was measured on the build machine on 2026-08-30 and matched the row derived for it exactly; 70 assertions have landed since, so this row is again a derivation awaiting its measurement |
-| `pytest`, runtime and credentials, after `make sbom` | `214 passed, 0 skipped`, derived. A runtime clears thirteen of the fourteen skips; the fourteenth is an empty parameter set and only an inventory clears it. `test_an_inventory_is_sorted_and_shaped_for_review` is parameterised over the files in `sbom/`, so five inventories turn one skip into five checks, which is where the extra four in the total come from |
+| `pytest`, no runtime | `201 passed, 14 skipped` |
+| `pytest`, runtime but no credentials | `206 passed, 9 skipped`, derived rather than measured |
+| `pytest`, runtime and credentials, before `make sbom` | `214 passed, 1 skipped`, derived. `140 passed, 0 skipped` was measured on the build machine on 2026-08-30 and matched the row derived for it exactly; 75 assertions have landed since, so this row is again a derivation awaiting its measurement |
+| `pytest`, runtime and credentials, after `make sbom` | `220 passed, 0 skipped`, derived. A runtime clears thirteen of the fourteen skips; the fourteenth is an empty parameter set and only an inventory clears it. `test_an_inventory_is_sorted_and_shaped_for_review` is parameterised over the files in `sbom/`, so six inventories turn one skip into six checks, which is where the extra five in the total come from |
 | `docker images mlops-platform/mlflow` | one row, tag `2.13.0`, after `build` |
 | `make doctor` | three checks (`container runtime`, `credentials`, `postgres volume`), each `OK`, except that the volume check reports it cannot verify a volume created before the fingerprint existed |
 
@@ -410,7 +410,7 @@ plainly that the artefact it would check does not exist.
 **Every row above assumes `sh`, `sha256sum` and `od` are reachable.** Without them, subtract twenty from
 the passed count and add twenty to the skipped count in each row: two preflight tests execute the Postgres
 init script, and eighteen parse the Makefile's recipes, and all twenty are gated on a POSIX shell rather
-than on a runtime, so no amount of Docker unskips them. Measured, not derived: `176 passed, 34 skipped`
+than on a runtime, so no amount of Docker unskips them. Measured, not derived: `181 passed, 34 skipped`
 on the authoring machine with `sh`, `sha256sum` and `od` taken off `PATH`.
 
 **The tier reached the pass condition on the build machine twice**: `120 passed, 0 skipped` at the commit tagged `v0.1.0`, and `124 passed, 0 skipped` at `v0.1.2`, after `docs/decisions/015` added two artifact-store tests and two compose-contract tests. The second run is the stronger evidence: the first passed while a configured artifact root pointed at a bucket nothing created, because no test then walked that path. Two earlier runs are
@@ -488,19 +488,45 @@ A mirror test asserts both entrypoints honour all four and spell the report-only
 an override that works on Linux and silently does nothing on Windows is worse than no override: the person
 who needed it edits the file instead, and what they ran is not what is committed.
 
-Both targets run their tool as a container — `anchore/syft:v1.9.0` and `anchore/grype:v0.79.0` — so
-reproducing a scan installs nothing on the host. Both pins live in the two entrypoints rather than in
-compose, which means the digest assertions in `tests/test_image_supply.py` do not reach them: **their
-digests are owed.** What is enforced today is weaker and stated as such — that both entrypoints name the
-same two versions, and that neither rides a moving tag.
+Both targets run their tool as a container — `anchore/syft:v1.51.1` and `anchore/grype:v0.118.0`, both
+pinned by tag *and* digest — so reproducing a scan installs nothing on the host and gets the same bytes.
+Those digests were owed when the mechanism landed and record 020 pays them. A test asserts the shape for
+both, separate from the compose assertion in `tests/test_image_supply.py`, which reads `image` keys and
+would never see a reference living in a Makefile.
+
+**These two pins expire, and no other pin in this repository does.** One line in each entrypoint:
+
+```
+# SUPPLY_TOOLS_EXPIRE: 2027-02-28
+```
+
+Past that date the suite fails, on any machine, with no daemon. The reason is not tidiness. An image pinned
+to old bytes is merely old and still works; a scanner pinned to old bytes stops working, because the thing
+that makes it useful is a vulnerability database that must be fresh by definition and whose schema its
+publisher retires. That is not hypothetical here: the first pin was `grype:v0.79.0`, chosen from memory
+rather than from a registry, and the first real scan failed with `db could not be loaded: the vulnerability
+database was built 24 weeks ago (max allowed age is 5 days)` before reading a single document. Record 020
+argues it, and section 8 has the symptom. Renewing means the version, the digest and the date, edited
+together.
+
+`make scan` prints `grype db status` before any finding, so the database's build date and schema sit above
+the results. A scan result is a function of three things — the scanner, the database, the SBOM — and only
+the third was visible in the output. The database is cached in a named volume, `mlops-platform-grype-db`,
+because `--rm` discards the container filesystem and an uncached run downloads it once per document.
 
 Run `build` first. The one image built here has to exist locally before there is anything to catalogue.
 
-**Three things here are not done, and a green suite hides none of them.**
+**Where this stands after the first run.** The SBOM half worked: five inventories, and the shape check went
+from one skipped empty parameter set to five passing assertions. Package counts were `apache/spark` 618,
+`apache/airflow` 578, `minio/minio` 284, `mlops-platform/mlflow` 177, `postgres:16.3-alpine` 51. The scan
+half returned nothing, for the reason above, so **all four of record 019's predictions are unscored** and
+what these images contain is still unknown.
 
-1. **No scan has run.** Nothing is yet known about what these five images contain. Note what pinning did
-   and did not buy: the images are now *identical* everywhere, not trustworthy. A pinned digest of a
-   vulnerable image is a reliably vulnerable image, and the scan is the step that would say so.
+**Three things are still not done, and a green suite hides none of them.**
+
+1. **No scan has produced a finding.** Pinning made the images *identical* everywhere, not trustworthy: a
+   pinned digest of a vulnerable image is a reliably vulnerable image, and the scan is the step that would
+   say so. It has not yet said anything.
 2. **`security/exceptions.toml` is empty and not wired into the scanner.** The half that runs today is the
    half that rots: every entry needs a reason of at least forty characters and an unquoted expiry date, and
    an expired entry fails the *suite*, on any machine, with no daemon. Converting an accepted finding into
@@ -510,9 +536,8 @@ Run `build` first. The one image built here has to exist locally before there is
    than a guess made before it. What CI does cover is the code around the scan: `supply.images` and
    `supply.inventory` are checked in the contract tier, which needs no daemon.
 
-**What M1 still owes:** a first `make sbom` and `make scan` on a machine with a daemon, the two cataloguer
-digests, and the images in GHCR at their digests. The last needs a credential and a decision about
-publishing, so it is not merely unrun work.
+**What M1 still owes:** a `make scan` that returns findings, and the images in GHCR at their digests. The
+second needs a credential and a decision about publishing, so it is not merely unrun work.
 
 ## 8. Troubleshooting by symptom
 
@@ -643,6 +668,19 @@ cannot be missing by construction.
 [`decisions/005`](decisions/005-migrate-off-the-withdrawn-spark-image.md) and
 [`011`](decisions/011-what-is-inside-an-image-is-a-claim.md) record all of it, and a contract test now
 refuses a healthcheck naming a binary its image is not recorded as providing.
+
+### `db could not be loaded: the vulnerability database was built N weeks ago`
+
+`make scan`, and it fails before reading a single SBOM. The scanner is too old for the database its
+publisher currently serves: schema versions get retired, an old grype asks for a retired one, the newest
+answer it can get is months stale, and its own five-day freshness check refuses it. The refusal is correct
+and the fix is never to suppress it.
+
+Bump the pin. Both entrypoints name `anchore/grype:` with a tag and a digest; re-resolve the digest for the
+current release and move `SUPPLY_TOOLS_EXPIRE` at the same time. `GRYPE_DB_VALIDATE_AGE=false` would make
+the message disappear and leave the scan reporting against a stale feed with nothing in the output saying
+so, which is strictly worse than a failure. Record 020 argues all of that; the expiry test exists so this
+is caught on a laptop instead of on the one machine with a daemon.
 
 ### A pinned image no longer resolves
 

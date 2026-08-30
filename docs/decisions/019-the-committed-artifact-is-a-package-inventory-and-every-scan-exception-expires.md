@@ -154,3 +154,53 @@ gate with no way through it. What CI covers today is the code around the scan: `
 `supply.inventory` are in the contract tier, which needs no daemon.
 
 None of the four predictions is scored. All four need a run on a machine with a daemon, and none has had one.
+
+## Prediction scored, 2026-08-30
+
+The first run on a machine with a daemon. `make sbom` worked; `make scan` produced nothing, for a
+reason that has its own record.
+
+**The SBOM half worked on the first attempt.** Six lines of output, five inventories, and the shape
+assertions turned from one skipped empty parameter set into five passing checks — the count went from
+`7 passed, 1 skipped` to `13 passed`, which is the mechanism doing exactly what the record said it
+would. Package counts: `apache/spark` 618, `apache/airflow` 578, `minio/minio` 284,
+`mlops-platform/mlflow` 177, `postgres:16.3-alpine` 51.
+
+**The scan half returned no security information at all.** Both invocations — gated and report-only —
+failed identically before reading a single document:
+
+```
+db could not be loaded: the vulnerability database was built 24 weeks ago (max allowed age is 5 days)
+```
+
+The pinned `grype:v0.79.0` speaks a database schema its publisher has retired, so the newest database
+that version can fetch is half a year old and grype's own five-day staleness check refuses it. The
+refusal is correct behaviour. Record 020 covers the diagnosis, the version bump, and the conclusion
+that a scanner pin is not like an image pin.
+
+**Prediction 1 — at least one High or Critical, in a base image rather than in anything installed
+here. NOT SCORED.** No finding was returned at any severity. Nothing about this was tested.
+
+**Prediction 2 — nothing this repository installs is the source of a High or Critical. NOT SCORED.**
+Same reason.
+
+**Prediction 3 — the mlflow inventory exceeds its base's by boto3, psycopg2-binary and their
+transitive dependencies, under twenty. NOT SCORED, and it was not measurable.** This is the one worth
+recording as a defect in the record rather than in the run. The prediction compares two inventories
+and only one of them existed: `supply.images` read the compose file's `image` keys, and
+`ghcr.io/mlflow/mlflow:v2.13.0` is a `FROM` in a Dockerfile rather than an `image` key, so the base
+was never catalogued. 177 packages was a number with nothing to compare it against.
+
+That is the same short-list defect this record's implementation note describes for
+`docker compose config --images`, one level down, and I wrote that note in the same session without
+noticing the second instance. `supply.images` now includes the `FROM` of everything the spine builds,
+and record 020's prediction 4 restates this one so it can be scored on the next run.
+
+**Prediction 4 — at least one exception will be needed to make the scan pass. NOT SCORED.** The scan
+did not run. `security/exceptions.toml` is still empty and still honest for the original reason.
+
+**What the run did settle, and it was not on the prediction list.** Both cataloguer pins were roughly
+two years stale, because I chose those versions from memory rather than from a registry, and nothing
+in the repository could have caught it: every assertion about these references checked that the pin
+was *exact*, and exactness has nothing to do with currency. That gap is what record 020's expiry is
+for.

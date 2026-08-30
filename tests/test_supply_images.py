@@ -9,6 +9,11 @@ repository: `docker compose config --images` reported the default profile only a
 So the test that matters is not that the function returns something plausible. It is that what it
 returns and what `tests/test_image_supply.py` independently reads out of the same file are the same
 set, checked here so the two readers cannot drift apart quietly.
+
+That set is every `image` key *and* the `FROM` of everything the spine builds. The base was missing
+from the first version of this list, which is the same short-list defect one level down, and the one
+that made record 019's third prediction unscorable: the inventory of the image built here cannot be
+diffed against a base nobody catalogued.
 """
 
 from __future__ import annotations
@@ -19,17 +24,33 @@ import pytest
 import yaml
 
 from supply.images import COMPOSE_FILE, ComposeError, references
-from tests.test_image_supply import SERVICES
+from tests.test_image_supply import BUILT_BASES, SERVICES
 
 
-def test_the_reference_list_is_every_image_key_in_the_compose_file() -> None:
+def test_the_reference_list_is_every_image_key_and_every_base() -> None:
     """The other reader of this file is the pinning suite; the two have to agree exactly.
 
-    Compared as sets against a comprehension written here rather than against a literal list, which
+    Compared as sets against comprehensions written here rather than against a literal list, which
     would be a third copy needing its own maintenance and would go stale on the first version bump.
+
+    Bases are in the list, and were not in the first version of it. A base is not needed for the
+    scan, since the built image contains it and scanning one covers both. What it buys is the diff:
+    without it, the two packages this repository installs are two lines somewhere in 177 and
+    nothing says which two.
     """
-    expected = {service["image"] for service in SERVICES.values()}
+    expected = {service["image"] for service in SERVICES.values()} | set(BUILT_BASES)
     assert set(references()) == expected
+
+
+def test_the_base_of_the_built_image_is_in_the_list() -> None:
+    """Asserted on its own, because it is the omission the set comparison above would inherit.
+
+    If `built_bases()` ever came back empty, the comparison would still pass -- both sides would be
+    short by the same amount. This one fails.
+    """
+    assert BUILT_BASES, "no service builds, so this assertion proves nothing"
+    missing = [base for base in BUILT_BASES if base not in references()]
+    assert not missing, f"bases the cataloguer would never walk: {missing}"
 
 
 def test_no_service_is_left_out_however_it_is_profiled() -> None:
