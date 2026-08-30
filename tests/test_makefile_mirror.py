@@ -160,3 +160,94 @@ def test_both_entrypoints_run_the_doctor_before_starting_the_stack() -> None:
         assert "preflight" in branch.group(0), (
             f"make.ps1's {target} starts the stack without running the doctor first"
         )
+
+
+#: The supply-chain tool pins, in each entrypoint's own syntax. Compared by value rather than by
+#: name, because the failure is two machines cataloguing the same image with different cataloguers:
+#: both runs succeed, both write an inventory, and only one of them is the one in the diff.
+CATALOGUER_PINS = {
+    "Makefile": re.compile(
+        r"^(?P<name>SYFT|GRYPE|SBOM_DIR|SCAN_FAIL_ON)\s*:=\s*(?P<value>\S+)$", re.MULTILINE
+    ),
+    "make.ps1": re.compile(
+        r"^\$(?P<name>Syft|Grype|SbomDir|ScanFailOn)\s*=\s*'(?P<value>[^']+)'$", re.MULTILINE
+    ),
+}
+
+#: Same four settings, spelled for each file. Makefile names are canonical.
+PIN_ALIASES = {
+    "Syft": "SYFT",
+    "Grype": "GRYPE",
+    "SbomDir": "SBOM_DIR",
+    "ScanFailOn": "SCAN_FAIL_ON",
+}
+
+
+def cataloguer_pins(name: str) -> dict[str, str]:
+    text = (REPO_ROOT / name).read_text(encoding="utf-8")
+    found = CATALOGUER_PINS[name].finditer(text)
+    return {
+        PIN_ALIASES.get(match.group("name"), match.group("name")): match.group("value")
+        for match in found
+    }
+
+
+def test_both_entrypoints_catalogue_with_the_same_tools_and_settings() -> None:
+    """A pinned cataloguer is only pinned if both entrypoints name the same one.
+
+    The inventory this repository commits is the output of a specific syft version. A Windows
+    reviewer running a different one regenerates the file, sees a diff that is about the tool
+    rather than about the image, and has no way to tell which it is looking at.
+    """
+    makefile = cataloguer_pins("Makefile")
+    powershell = cataloguer_pins("make.ps1")
+    expected = {"SYFT", "GRYPE", "SBOM_DIR", "SCAN_FAIL_ON"}
+    assert set(makefile) == expected, (
+        f"the Makefile is missing pins: {sorted(expected - set(makefile))}"
+    )
+    assert set(powershell) == expected, (
+        f"make.ps1 is missing pins: {sorted(expected - set(powershell))}"
+    )
+    differing = {
+        key: (makefile[key], powershell[key])
+        for key in expected
+        if makefile[key] != powershell[key]
+    }
+    assert not differing, f"the two entrypoints disagree (Makefile, make.ps1): {differing}"
+
+
+def test_the_cataloguers_are_pinned_to_an_exact_version() -> None:
+    """A moving tag would make the committed inventory a function of the day it was regenerated.
+
+    Not a digest pin, and record 019 records that as owed rather than done: these two references
+    live in the entrypoints rather than in compose, so the digest assertion in
+    tests/test_image_supply.py does not reach them. An exact tag is the weaker claim this can make
+    honestly today.
+    """
+    for name, pins in (
+        ("Makefile", cataloguer_pins("Makefile")),
+        ("make.ps1", cataloguer_pins("make.ps1")),
+    ):
+        for tool in ("SYFT", "GRYPE"):
+            reference = pins[tool]
+            assert ":" in reference, f"{name}: {tool} names no tag: {reference}"
+            tag = reference.rsplit(":", 1)[1].removeprefix("v")
+            assert tag not in {"latest", "edge", "stable"}, f"{name}: {tool} rides {tag}"
+            assert tag[0].isdigit(), f"{name}: {tool} tag is not a version: {tag}"
+
+
+def test_the_scan_reads_the_sbom_rather_than_the_image() -> None:
+    """Otherwise the thing scanned and the thing inventoried are two different reads of the image.
+
+    A finding then cannot be traced to a committed line, which is most of what committing the
+    inventory was for.
+    """
+    for name in ("Makefile", "make.ps1"):
+        text = (REPO_ROOT / name).read_text(encoding="utf-8")
+        body = re.search(
+            r"^(?:scan:|    'scan' \{).*?(?=^(?:\S|    \}))", text, re.MULTILINE | re.DOTALL
+        )
+        assert body, f"{name} has no scan target for this test to look inside"
+        assert "sbom:/sbom/" in body.group(0), (
+            f"{name}'s scan does not point the scanner at a generated SBOM"
+        )

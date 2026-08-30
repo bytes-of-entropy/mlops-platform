@@ -99,12 +99,12 @@ broken repository rather than like a wrong location:
 | Git | any current | the clone, and Git Bash, which the hooks run under | `git --version` |
 | Python | 3.11–3.12 | `pyproject.toml` declares `>=3.11,<3.13` | `py -3 -V` |
 | A container runtime | Docker Desktop with the WSL2 backend | everything in section 6 | `docker version` |
-| GNU Make | optional | unskips one Makefile-parity test; CI runs the Makefile regardless | `make --version` |
-| `sh`, `sha256sum`, `od` | **required for a zero-skip run** | two preflight tests execute the Postgres init script and compare its digest against the Python one; without a POSIX shell they skip by name | `sh --version` |
+| GNU Make | optional, and unused by the suite | no test invokes `make`, and CI does not either: it calls the same tools in the same order so a runner needs no `make`. The Makefile stays canonical for a person reading it, and `tests/test_makefile_recipes.py` checks every recipe with `sh -n` rather than by running one | `make --version` |
+| `sh`, `sha256sum`, `od` | **required for a zero-skip run** | two preflight tests execute the Postgres init script and compare its digest against the Python one, and eighteen more parse the Makefile's recipes with `sh -n`; without a POSIX shell all twenty skip by name | `sh --version` |
 
 **On that last row, because it costs a confusing half hour otherwise.** Git for Windows already ships all
 three, in `usr\bin` beside the installation, but PowerShell does not have that directory on `PATH`, so a run
-from PowerShell skips those two tests and reports `118 passed, 2 skipped` with everything else green. Add it
+from PowerShell skips those twenty tests and reports `174 passed, 34 skipped` with everything else green. Add it
 for the session and they run:
 
 ```powershell
@@ -377,13 +377,13 @@ otherwise.
 
 | Command | Expected output |
 | --- | --- |
-| `ruff check .` | `All checks passed!` for 25 paths: the 24 modules plus `pyproject.toml`, read for configuration |
-| `ruff format --check .` | `49 files already formatted`, Python and Markdown; the formatter handles both |
-| `mypy` | `Success: no issues found in 25 source files` |
+| `ruff check .` | `All checks passed!` for 35 paths: the 34 modules plus `pyproject.toml`, read for configuration |
+| `ruff format --check .` | `58 files already formatted`: 34 Python and 25 Markdown, less `.pytest_cache/README.md`, which is ignored by git and therefore by the formatter |
+| `mypy` | `Success: no issues found in 32 source files` |
 | `pre-commit run --all-files` | 8 lines, each `Passed`; no summary line |
-| `pytest`, no runtime | `127 passed, 13 skipped` |
-| `pytest`, runtime but no credentials | `132 passed, 8 skipped`, derived rather than measured |
-| `pytest`, runtime and credentials | `140 passed, 0 skipped`. `135 passed, 0 skipped` was measured on the build machine on 2026-08-30, with the image-contract tests in; five digest assertions have landed since, so this row is derived from a measurement rather than being one |
+| `pytest`, no runtime | `194 passed, 14 skipped` |
+| `pytest`, runtime but no credentials | `199 passed, 9 skipped`, derived rather than measured |
+| `pytest`, runtime and credentials | `208 passed, 0 skipped`, derived. `140 passed, 0 skipped` was measured on the build machine on 2026-08-30 and matched the row derived for it exactly; 68 assertions have landed since, so this row is again a derivation awaiting its measurement. One of the 68 is a placeholder that becomes a real check rather than a new one: `test_an_inventory_is_sorted_and_shaped_for_review` is parameterised over the committed inventories and skips while there are none, so the first `make sbom` turns that skip into five checks |
 | `docker images mlops-platform/mlflow` | one row, tag `2.13.0`, after `build` |
 | `make doctor` | three checks (`container runtime`, `credentials`, `postgres volume`), each `OK`, except that the volume check reports it cannot verify a volume created before the fingerprint existed |
 
@@ -393,15 +393,20 @@ carries, because the authoring machine cannot produce it. If a run disagrees wit
 measured and the measurement matched it exactly, which is the only reason the derivation is worth trusting
 for the row that still has none.
 
-The eleven skips divide as five image-resolution checks, one per registry reference: the four tags
+The fourteen skips divide as five image-resolution checks, one per registry reference: the four tags
 the spine pulls plus the base the one built image comes from (they ask a registry whether each still
-resolves, which needs a docker client); three idempotency tests; and three that run the smoke DAG.
-The last six need credentials as well as a runtime, which is why the middle row drops six rather than
-three.
+resolves, which needs a docker client); two artifact-store checks; three idempotency tests; three that
+run the smoke DAG; and one empty parameter set, because the committed-inventory check is parameterised
+over the files in `sbom/` and there are none yet. The last six need credentials as well as a runtime,
+which is why the middle row drops six rather than three. The empty-set skip is the only one a container
+runtime does not clear: it clears on the first `make sbom`, and until then it is the suite saying
+plainly that the artefact it would check does not exist.
 
-**Every row above assumes `sh`, `sha256sum` and `od` are reachable.** Without them, subtract two from the
-passed count and add two to the skipped count in each row: those two preflight tests are gated on a POSIX
-shell rather than on a runtime, so no amount of Docker unskips them.
+**Every row above assumes `sh`, `sha256sum` and `od` are reachable.** Without them, subtract twenty from
+the passed count and add twenty to the skipped count in each row: two preflight tests execute the Postgres
+init script, and eighteen parse the Makefile's recipes, and all twenty are gated on a POSIX shell rather
+than on a runtime, so no amount of Docker unskips them. Measured, not derived: `174 passed, 34 skipped`
+on the authoring machine with `sh`, `sha256sum` and `od` taken off `PATH`.
 
 **The tier reached the pass condition on the build machine twice**: `120 passed, 0 skipped` at the commit tagged `v0.1.0`, and `124 passed, 0 skipped` at `v0.1.2`, after `docs/decisions/015` added two artifact-store tests and two compose-contract tests. The second run is the stronger evidence: the first passed while a configured artifact root pointed at a bucket nothing created, because no test then walked that path. Two earlier runs are
 worth keeping beside it, because both were misread at the time. `3 failed, 110 passed, 2 skipped, 3 errors in
@@ -438,11 +443,52 @@ Select-String -Path compose/*.yml -Pattern 'image:\s*(\S+)' |
 Use that rather than `config --images`, which reports only the default profile and silently omitted
 `apache/airflow` the first time.
 
-**What M1 still owes:** an SBOM, a vulnerability scan with any exceptions documented, and the images in
-GHCR at those digests. All three need a daemon, a network, and in the last case a credential, so all
-three are build-machine work rather than authoring work. Note what pinning did and did not buy: the
-images are now *identical* everywhere, not trustworthy. A pinned digest of a vulnerable image is a
-reliably vulnerable image, and the scan is what would say so.
+### The SBOM and the scan
+
+`make sbom` catalogues every image the spine names and writes two files per image into `sbom/`: the SPDX
+document, which is generated and **not** committed, and a sorted `name==version` inventory, which is. The
+split is the whole decision. SPDX carries a document UUID and a creation timestamp, so a committed one
+produces a diff on every regeneration whether the image changed or not, and a file that always diffs is a
+file nobody reads. The inventory changes only when the image does, which makes a one-line diff mean
+something. Record 019 argues it, and `sbom/.gitignore` enforces the half a convention would not.
+
+The image list comes from `supply.images`, which reads the `image` keys out of the compose file, and
+deliberately **not** from `docker compose config --images`. That is the obvious tool and it is the wrong
+one: it reports the services of the profiles it was given, and it has already left `apache/airflow` out of
+this repository's list once — the same omission is recorded three paragraphs up, where it cost a
+re-resolution. A cataloguer fed a short list writes an inventory short in exactly the same way, and an
+inventory nobody can tell is incomplete reads as a clean bill of health. Reading the `image` keys is
+exhaustive by construction: five references come back, one of them the image built here, which is the only
+one whose contents are a decision made in this repository and so the one least defensible to omit.
+
+`make scan` reads those SPDX documents rather than the images, so what is scanned is what was inventoried
+and a finding can be traced to a committed line. It fails on `high` or above; `SCAN_FAIL_ON` overrides that.
+
+Both targets run their tool as a container — `anchore/syft:v1.9.0` and `anchore/grype:v0.79.0` — so
+reproducing a scan installs nothing on the host. Both pins live in the two entrypoints rather than in
+compose, which means the digest assertions in `tests/test_image_supply.py` do not reach them: **their
+digests are owed.** What is enforced today is weaker and stated as such — that both entrypoints name the
+same two versions, and that neither rides a moving tag.
+
+Run `build` first. The one image built here has to exist locally before there is anything to catalogue.
+
+**Three things here are not done, and a green suite hides none of them.**
+
+1. **No scan has run.** Nothing is yet known about what these five images contain. Note what pinning did
+   and did not buy: the images are now *identical* everywhere, not trustworthy. A pinned digest of a
+   vulnerable image is a reliably vulnerable image, and the scan is the step that would say so.
+2. **`security/exceptions.toml` is empty and not wired into the scanner.** The half that runs today is the
+   half that rots: every entry needs a reason of at least forty characters and an unquoted expiry date, and
+   an expired entry fails the *suite*, on any machine, with no daemon. Converting an accepted finding into
+   a scanner ignore rule is the other half, and it is owed at the first accepted finding rather than built
+   for zero of them.
+3. **CI does not scan.** The threshold worth gating at is a decision that needs the first result rather
+   than a guess made before it. What CI does cover is the code around the scan: `supply.images` and
+   `supply.inventory` are checked in the contract tier, which needs no daemon.
+
+**What M1 still owes:** a first `make sbom` and `make scan` on a machine with a daemon, the two cataloguer
+digests, and the images in GHCR at their digests. The last needs a credential and a decision about
+publishing, so it is not merely unrun work.
 
 ## 8. Troubleshooting by symptom
 

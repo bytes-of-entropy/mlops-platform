@@ -1,0 +1,5 @@
+# The SPDX documents are generated, not reviewed: each carries a document UUID and a creation
+# timestamp, so a committed one produces a diff on every regeneration whether the image changed
+# or not. What gets committed is the sorted inventory beside it, which carries neither.
+# Record 019 argues it; tests/test_security_exceptions.py checks the shape of what lands here.
+*.spdx.json

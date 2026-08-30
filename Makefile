@@ -21,7 +21,17 @@ endif
 # would have said why. Bounded, it exits nonzero and ``make logs`` still works.
 WAIT_TIMEOUT := 300
 
-.PHONY: help setup test lint fmt hooks check doctor build up up-quickstart down clean reset ps logs config
+# Two cataloguers, run as containers so a reviewer installs nothing to reproduce a scan, and pinned
+# by tag with their digests owed exactly as the spine's were before record 018 closed that gap.
+# Both write into $(SBOM_DIR) through a bind mount rather than through a shell redirect: the
+# Windows mirror cannot redirect a JSON stream without deciding an encoding for it, and the two
+# entrypoints producing byte-different documents from the same image would defeat the point.
+SYFT         := anchore/syft:v1.9.0
+GRYPE        := anchore/grype:v0.79.0
+SBOM_DIR     := sbom
+SCAN_FAIL_ON := high
+
+.PHONY: help setup test lint fmt hooks check doctor build sbom scan up up-quickstart down clean reset ps logs config
 
 help:
 	@echo "setup           create .venv and install dev dependencies"
@@ -31,6 +41,8 @@ help:
 	@echo "check           everything the gate requires: lint, hooks, test"
 	@echo "doctor          check the machine can start the stack, and say what is wrong"
 	@echo "build           build the one image in the spine, without starting anything"
+	@echo "sbom            catalogue every image and write the reviewable inventories"
+	@echo "scan            scan the catalogued SBOMs and fail on $(SCAN_FAIL_ON) or above"
 	@echo "up              start the full spine (all services)"
 	@echo "up-quickstart   start the 4 GB / 2 CPU reviewer profile"
 	@echo "down            stop and remove containers, KEEP volumes"
@@ -81,6 +93,44 @@ doctor:
 # cold build plus a cold pull is minutes of that budget spent on work that is identical every time.
 build:
 	$(COMPOSE) --profile full build
+
+# The image list comes from `supply.images`, not from `compose config --images`. The obvious tool
+# reports the profiles it was given and has already left `apache/airflow` out of this list once;
+# a cataloguer fed a short list writes an inventory short in the same way, which then reads as a
+# clean bill of health. `supply.images` takes the `image` keys themselves, so it cannot omit a
+# profiled service, it sorts and deduplicates, and it needs no daemon to answer.
+#
+# The digest is dropped from the filename and the tag kept, so a committed inventory is named
+# after something a reader recognises; two images differing only by digest cannot both appear in
+# one compose file, so nothing collides. Run `build` first: the one image built here has to exist
+# locally before there is anything to catalogue.
+sbom:
+	@mkdir -p $(SBOM_DIR)
+	@for image in $$($(PY) -m supply.images); do \
+	  name=$$(echo "$$image" | sed 's/@.*//; s#[/:]#_#g'); \
+	  echo "cataloguing $$image"; \
+	  docker run --rm \
+	    -v /var/run/docker.sock:/var/run/docker.sock \
+	    -v "$$PWD/$(SBOM_DIR):/out" \
+	    $(SYFT) "$$image" -o "spdx-json=/out/$$name.spdx.json" || exit 1; \
+	  $(PY) -m supply.inventory \
+	    "$(SBOM_DIR)/$$name.spdx.json" "$(SBOM_DIR)/$$name.packages.txt" || exit 1; \
+	done
+
+# Reads the SBOM rather than the image, so what is scanned is what was inventoried and a finding
+# can be traced to a committed line. Accepted findings are not wired in yet: security/exceptions.toml
+# is empty, and generating a scanner ignore file for zero entries would be a mechanism with nothing
+# to mechanise. The expiry check in the contract tier runs today; the bridge is owed at the first
+# accepted finding, and record 019 records that as an open limit rather than a done thing.
+scan:
+	@ls $(SBOM_DIR)/*.spdx.json >/dev/null 2>&1 || \
+	  { echo "no SBOMs in $(SBOM_DIR); run 'make sbom' first"; exit 1; }
+	@for document in $(SBOM_DIR)/*.spdx.json; do \
+	  echo "scanning $$document"; \
+	  docker run --rm -v "$$PWD/$(SBOM_DIR):/sbom" \
+	    $(GRYPE) "sbom:/sbom/$$(basename $$document)" \
+	    --fail-on $(SCAN_FAIL_ON) || exit 1; \
+	done
 
 up: doctor
 	$(COMPOSE) --profile full up -d --build --wait --wait-timeout $(WAIT_TIMEOUT)
