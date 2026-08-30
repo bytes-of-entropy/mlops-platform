@@ -1,0 +1,79 @@
+name: supply
+
+# Weekly and on demand, not on every push, and the reason is what the gate measures rather than
+# cost. A scan result is a function of the SBOM, the scanner and the vulnerability database. The
+# first two change only when a commit changes them, and the contract tier already covers the code
+# that produces them on every push. The third changes daily without anybody committing anything,
+# which means the interesting question this job answers -- has a new advisory appeared against these
+# images -- is a question about elapsed time, not about a diff. Running it per push would answer the
+# same question repeatedly on a busy day and not at all on a quiet week.
+#
+# Monday morning UTC, so a firing lands at the start of a week rather than into a Friday evening.
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+  # Also whenever the things it measures actually change, which is the one push-shaped trigger that
+  # earns its keep: a base image bump or a change to the gate itself should be checked immediately
+  # rather than up to a week later.
+  push:
+    paths:
+      - "compose/docker-compose.yml"
+      - "images/**"
+      - "sbom/*.known.txt"
+      - "supply/**"
+      - "Makefile"
+      - ".github/workflows/supply.yml"
+
+jobs:
+  scan:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: install
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -e ".[dev]"
+
+      # The one image this repository builds has to exist locally before it can be catalogued, and
+      # cataloguing it is the point: it is the only image in the spine whose contents are a decision
+      # made here. `--profile full` matches what `make sbom` walks.
+      - name: build the spine's own image
+        run: make build
+
+      - name: catalogue every image
+        run: make sbom
+
+      # The inventories are committed, so a regeneration that differs is either a change nobody
+      # committed or a cataloguer that is not reproducible. Record 019 tested the second by hand once
+      # and this is where it stops being a one-off observation.
+      - name: the committed inventories still describe these images
+        run: |
+          if ! git diff --exit-code -- sbom/; then
+            echo "::error::sbom/ changed. Either an image moved without its inventory being"
+            echo "::error::committed, or the cataloguer is not reproducible. Record 019 argues both"
+            echo "::error::matter; the diff above says which."
+            exit 1
+          fi
+
+      # The gate. Fails on an advisory identifier absent from the committed baseline for that image,
+      # which includes advisories published since the baseline was taken -- see record 022, where
+      # that is a designed behaviour rather than a false alarm.
+      - name: scan against the committed baselines
+        run: make scan
+
+      # Uploaded whatever the outcome, because the run that fails is the one whose report is worth
+      # reading, and the SPDX documents and raw findings are deliberately not committed.
+      - name: keep the reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: supply-reports
+          path: |
+            sbom/*.spdx.json
+            sbom/*.findings.json
+          retention-days: 30

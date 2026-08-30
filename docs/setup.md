@@ -104,7 +104,7 @@ broken repository rather than like a wrong location:
 
 **On that last row, because it costs a confusing half hour otherwise.** Git for Windows already ships all
 three, in `usr\bin` beside the installation, but PowerShell does not have that directory on `PATH`, so a run
-from PowerShell skips those twenty tests and reports `203 passed, 33 skipped` with everything else green. Add it
+from PowerShell skips those twenty-two tests and reports `236 passed, 35 skipped` with everything else green. Add it
 for the session and they run:
 
 ```powershell
@@ -377,13 +377,13 @@ otherwise.
 
 | Command | Expected output |
 | --- | --- |
-| `ruff check .` | `All checks passed!` for 36 paths: the 35 modules plus `pyproject.toml`, read for configuration |
-| `ruff format --check .` | `61 files already formatted`: 35 Python and 27 Markdown, less `.pytest_cache/README.md`, which is ignored by git and therefore by the formatter. The six committed inventories are neither, so the formatter never reads them |
-| `mypy` | `Success: no issues found in 33 source files` |
+| `ruff check .` | `All checks passed!` for 38 paths: the 37 modules plus `pyproject.toml`, read for configuration |
+| `ruff format --check .` | `64 files already formatted`: 37 Python and 28 Markdown, less `.pytest_cache/README.md`, which is ignored by git and therefore by the formatter. The committed inventories and advisory baselines are neither, so the formatter never reads them |
+| `mypy` | `Success: no issues found in 35 source files` |
 | `pre-commit run --all-files` | 8 lines, each `Passed`; no summary line |
-| `pytest`, no runtime | `223 passed, 13 skipped` |
-| `pytest`, runtime but no credentials | `228 passed, 8 skipped`, derived rather than measured |
-| `pytest`, runtime and credentials | `236 passed, 0 skipped`, derived. The six inventories are committed as of this commit, so the parameterised shape check has real files in any clone and there is no longer a before-and-after-`make sbom` distinction to draw |
+| `pytest`, no runtime | `258 passed, 13 skipped` |
+| `pytest`, runtime but no credentials | `263 passed, 8 skipped`, derived rather than measured |
+| `pytest`, runtime and credentials | `271 passed, 0 skipped`, derived |
 | `docker images mlops-platform/mlflow` | one row, tag `2.22.4`, after `build` |
 | `make doctor` | three checks (`container runtime`, `credentials`, `postgres volume`), each `OK`, except that the volume check reports it cannot verify a volume created before the fingerprint existed |
 
@@ -410,11 +410,12 @@ clears five rather than thirteen. There used to be a fourteenth, an empty parame
 committed-inventory check had no files to run against; committing the inventories turned it into six real
 assertions.
 
-**Every row above assumes `sh`, `sha256sum` and `od` are reachable.** Without them, subtract twenty from
-the passed count and add twenty to the skipped count in each row: two preflight tests execute the Postgres
-init script, and eighteen parse the Makefile's recipes, and all twenty are gated on a POSIX shell rather
-than on a runtime, so no amount of Docker unskips them. Measured, not derived: `203 passed, 33 skipped`
-on the authoring machine with `sh`, `sha256sum` and `od` taken off `PATH`.
+**Every row above assumes `sh`, `sha256sum` and `od` are reachable.** Without them, subtract
+twenty-two from the passed count and add twenty-two to the skipped count in each row: two preflight tests
+execute the Postgres init script, and twenty parse the Makefile's recipes with `sh -n`, and all of them
+are gated on a POSIX shell rather than on a runtime, so no amount of Docker unskips them. Measured, not
+derived: `236 passed, 35 skipped` on the authoring machine with `sh`, `sha256sum` and `od` taken off
+`PATH`.
 
 **The tier reached the pass condition on the build machine twice**: `120 passed, 0 skipped` at the commit tagged `v0.1.0`, and `124 passed, 0 skipped` at `v0.1.2`, after `docs/decisions/015` added two artifact-store tests and two compose-contract tests. The second run is the stronger evidence: the first passed while a configured artifact root pointed at a bucket nothing created, because no test then walked that path. Two earlier runs are
 worth keeping beside it, because both were misread at the time. `3 failed, 110 passed, 2 skipped, 3 errors in
@@ -568,22 +569,58 @@ rather than quoted. Record 019's argument for committing them is that a bump pro
 until now none had ever travelled back from the machine that writes them, so the property had never been
 exercised. The six in `sbom/` are the baseline; the next bump diffs against them.
 
-**The threshold is still unset, and the cheap lever is now spent.** 3,372 findings and 138 Critical is what
-current-within-major looks like. The remaining levers are crossing major lines — Airflow 3, Spark 4,
-Postgres 18, MLflow 3, each a migration with its own failure modes — or accepting the residue and gating
-against regression. Record 021 anticipated the second: a ratchet "remains a good candidate for the
-threshold *after* the bump, when what remains really is the residue". It is now the residue.
+### The gate: advisory identity, not severity
 
-**Two things are still not done, and a green suite hides neither.**
+`--fail-on high` meets 1,382 rows and always will, because the fixes that exist are mostly in majors
+this spine has good reasons not to cross. A gate that fails identically every run is one people learn to
+ignore, and then it is worse than nothing: a red build that means nothing hides a red build that means
+something. So the gate is on **identity**.
+
+Each image's Critical-and-High advisory identifiers live in `sbom/<image>.known.txt`, committed, sorted,
+one per line. `make scan` fails on an identifier that is not there. Three targets, one scan:
+
+| target | does |
+| --- | --- |
+| `make scan-report` | scans and prints the whole table, gating on nothing |
+| `make scan` | the same scan, plus the comparison; fails on an unbaselined advisory |
+| `make scan-accept` | rewrites every baseline from the current scan, for review as a diff |
+
+A count was the obvious alternative and `apache/spark` is why it was rejected: between two runs its
+findings fell 46% while its Critical rose from 5 to 9 and its High from 93 to 121. A total would have
+called that image improving while the number that would stop a build nearly doubled. A set also cannot
+hide a swap, and — the part that decides it — a new *identifier* tells you which advisory in which image,
+with the package and the fixed version in the table beside it. A rising number tells you a number.
+
+**A baseline is not an exception list.** This is the thing to get right first. `security/exceptions.toml`
+holds a finding somebody read and argued for, with a reason of at least forty characters and an expiry
+date, and an expired entry fails the suite on any machine. A line in a baseline claims only that the
+advisory was already there when the baseline was taken: no judgement, no reason, no expiry, no exception
+granted. Every generated baseline repeats that in its own header, because the two files look alike in a
+directory listing.
+
+Two asymmetries are deliberate. A **new** advisory fails; one that **disappears**, or is rescored below
+the gate, does not — making a fix cost a commit is how a gate teaches people not to fix things. And a
+**missing** baseline is an error rather than an empty set, because empty would bury "this image has never
+been scanned" under hundreds of lines of "new advisory".
+
+`SCAN_FAIL_ON` is gone. It set a severity threshold and severity is no longer what gates, so it would
+have been a knob wired to nothing; what it was actually used for is `scan-report`. Record 022 argues all
+of this, including the two costs it does not hide: this gate can fail for reasons outside the repository,
+which no other check here can, and **it does not make the images safer**. The 3,372 findings are still
+there and the baseline is a record of them, not a reduction. What it buys is that the 3,373rd gets
+noticed.
+
+**One thing is still not done, and one is not mine to do.**
 
 1. **`security/exceptions.toml` is empty and not wired into the scanner.** The half that runs today is
-   the half that rots: every entry needs a reason of at least forty characters and an unquoted expiry
-   date, and an expired entry fails the *suite*, on any machine, with no daemon. After record 021 this is
-   less urgent than it looked — the answer to a thousand findings was never a thousand exceptions.
-2. **CI does not scan.** It needs the threshold, and the threshold is the next decision.
+   the half that rots: an expired entry fails the suite, on any machine, with no daemon. After records
+   021 and 022 it is also less urgent than it looked — the answer to a thousand findings was never a
+   thousand exceptions, and the baseline is a different mechanism for a different claim.
+2. **The images in GHCR at their digests.** Needs a credential and a decision about publishing.
 
-**What M1 still owes:** a threshold chosen from the numbers above, and the images in GHCR at their
-digests. The second needs a credential and a decision about publishing, so it is not merely unrun work.
+**What M1 still owes:** the six baselines written by `make scan-accept` and committed, a `make scan` that
+passes against them, and the GHCR push. The first two are one build-machine run.
+
 
 ## 8. Troubleshooting by symptom
 
