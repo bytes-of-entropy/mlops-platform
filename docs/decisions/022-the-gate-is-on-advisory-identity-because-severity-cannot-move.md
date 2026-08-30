@@ -160,3 +160,59 @@ without asking.
 **What this does not do.** It does not make the images safer. 3,372 findings are still there and the
 baseline is a record of them, not a reduction. What the gate buys is that the 3,373rd gets noticed, which
 is the only claim being made and is worth stating so nobody reads a green build as a clean bill of health.
+
+## Prediction scored, 2026-08-30
+
+Three of four scorable, all correct. The fourth is a prediction about the next three months.
+
+**Prediction 1 — six baselines totalling 428 unique advisory identifiers. CORRECT**, to the digit.
+
+| image | advisories |
+| --- | --- |
+| `apache/airflow:2.11.2-python3.11` | 218 |
+| `apache/spark:3.5.9-python3` | 117 |
+| `ghcr.io/mlflow/mlflow:v2.22.4` | 147 |
+| `mlops-platform/mlflow:2.22.4` | 147 |
+| `minio/minio:RELEASE.2025-09-07` | 70 |
+| `postgres:16.15-alpine` | 31 |
+| sum of the files | 730 |
+| **distinct advisories** | **428** |
+
+The union is 197 GHSA, 163 CVE, 68 GO. The base and the image built from it carry identical counts
+for the third consecutive run, which is record 021's fifth prediction still holding.
+
+**Prediction 2 — the first `make scan` after accepting passes on all six. CORRECT.** All six report
+"all baselined" and the step exited zero, which is the first run in which this gate could pass at all.
+It should have been a tautology and it was, for the reason the run makes visible: `scan-accept`
+reported `No vulnerability database update available`, so both halves matched against the same
+database. Had it updated between the two calls, the difference would have been advisories published
+in that window.
+
+**Prediction 3 — the table parse and grype's JSON agree, except perhaps one or two rows lost to
+terminal wrapping. CORRECT, and better than stated: they agree exactly.** Every per-image count
+derived by parsing the printed table matches the count grype's JSON produced. The two wrapped rows
+that prompted the hedge were in the pre-bump run's paste, so there was nothing left to lose here — the
+prediction was right and its stated reason turned out not to apply.
+
+**Prediction 4 — this gate fires within three months for a reason unrelated to any change here.** Not
+scorable yet, by construction. Recorded so it is not mistaken for a defect when it happens.
+
+## What the run exposed that no prediction covered
+
+**The reproducibility check moved from an observation to a check.** `git diff --exit-code -- sbom/`
+after `make sbom` reported `sbom/ is unchanged: the catalogue reproduced exactly` — the third
+consecutive reproduction, and the first verified by git rather than by hand-comparing hashes. The same
+assertion the supply workflow now makes in CI.
+
+**And a defect of mine in the runner, worth recording because the misreading cost more than the bug.**
+The digest step exited 127. I had deleted its function two commits earlier by removing a *neighbouring*
+function by line range: the range ran forwards, which the patch asserted, and swallowed the definition
+sitting between the two anchors, which it did not. Assertions about a slice's direction say nothing
+about its contents.
+
+I then saw the same 127 in my own sandbox test and read it as the missing container runtime that
+explained every other failure in that run. `127` is "command not found". The build machine spent twenty
+minutes reproducing a fact already on my screen. The runner now refuses to start when a helper its
+steps call is undefined, which turns that class of failure from a last-step surprise into a
+first-second one, and the three helpers that had been defined *below* the step list — which is what
+made the deletion possible — now sit above it with the others.

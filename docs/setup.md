@@ -104,7 +104,7 @@ broken repository rather than like a wrong location:
 
 **On that last row, because it costs a confusing half hour otherwise.** Git for Windows already ships all
 three, in `usr\bin` beside the installation, but PowerShell does not have that directory on `PATH`, so a run
-from PowerShell skips those twenty-two tests and reports `236 passed, 35 skipped` with everything else green. Add it
+from PowerShell skips those twenty-two tests and reports `249 passed, 35 skipped` with everything else green. Add it
 for the session and they run:
 
 ```powershell
@@ -381,9 +381,9 @@ otherwise.
 | `ruff format --check .` | `64 files already formatted`: 37 Python and 28 Markdown, less `.pytest_cache/README.md`, which is ignored by git and therefore by the formatter. The committed inventories and advisory baselines are neither, so the formatter never reads them |
 | `mypy` | `Success: no issues found in 35 source files` |
 | `pre-commit run --all-files` | 8 lines, each `Passed`; no summary line |
-| `pytest`, no runtime | `258 passed, 13 skipped` |
-| `pytest`, runtime but no credentials | `263 passed, 8 skipped`, derived rather than measured |
-| `pytest`, runtime and credentials | `271 passed, 0 skipped`, derived |
+| `pytest`, no runtime | `271 passed, 13 skipped` |
+| `pytest`, runtime but no credentials | `276 passed, 8 skipped`, derived rather than measured |
+| `pytest`, runtime and credentials | `284 passed, 0 skipped`, derived. The previous derivation of this row, `271 passed, 0 skipped`, was measured on the build machine on 2026-08-30 and matched exactly |
 | `docker images mlops-platform/mlflow` | one row, tag `2.22.4`, after `build` |
 | `make doctor` | three checks (`container runtime`, `credentials`, `postgres volume`), each `OK`, except that the volume check reports it cannot verify a volume created before the fingerprint existed |
 
@@ -414,7 +414,7 @@ assertions.
 twenty-two from the passed count and add twenty-two to the skipped count in each row: two preflight tests
 execute the Postgres init script, and twenty parse the Makefile's recipes with `sh -n`, and all of them
 are gated on a POSIX shell rather than on a runtime, so no amount of Docker unskips them. Measured, not
-derived: `236 passed, 35 skipped` on the authoring machine with `sh`, `sha256sum` and `od` taken off
+derived: `249 passed, 35 skipped` on the authoring machine with `sh`, `sha256sum` and `od` taken off
 `PATH`.
 
 **The tier reached the pass condition on the build machine twice**: `120 passed, 0 skipped` at the commit tagged `v0.1.0`, and `124 passed, 0 skipped` at `v0.1.2`, after `docs/decisions/015` added two artifact-store tests and two compose-contract tests. The second run is the stronger evidence: the first passed while a configured artifact root pointed at a bucket nothing created, because no test then walked that path. Two earlier runs are
@@ -618,8 +618,20 @@ noticed.
    thousand exceptions, and the baseline is a different mechanism for a different claim.
 2. **The images in GHCR at their digests.** Needs a credential and a decision about publishing.
 
-**What M1 still owes:** the six baselines written by `make scan-accept` and committed, a `make scan` that
-passes against them, and the GHCR push. The first two are one build-machine run.
+**Where the gate stands: it has passed, once, for the first time.** `make scan-accept` wrote six
+baselines on the build machine — 218 for `apache/airflow`, 147 each for the MLflow base and the image
+built from it, 117 for `apache/spark`, 70 for `minio/minio`, 31 for `postgres` — 730 lines holding **428
+distinct advisories**, which is the number record 022 predicted before the run. `make scan` then reported
+"all baselined" on all six and exited zero.
+
+That pass is close to a tautology and was meant to be: accept, then compare the same scan. What makes it
+worth having is what it demonstrates about the machinery rather than about the images — the baselines
+parse, the comparison runs on both entrypoints, and the asymmetries behave. The interesting run is the
+first one where a database update lands between two scans, and record 022 predicts that within three
+months.
+
+**What M1 still owes:** the images in GHCR at their digests. That needs a credential and a decision about
+publishing, so it is the one remaining item that is not simply an unrun command.
 
 
 ## 8. Troubleshooting by symptom
