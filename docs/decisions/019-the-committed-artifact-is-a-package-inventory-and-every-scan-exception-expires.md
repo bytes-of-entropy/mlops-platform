@@ -273,3 +273,41 @@ old — `apache/airflow:2.9.2-python3.11` and `postgres:16.3-alpine` are mid-202
 overwhelmingly a version bump rather than an accepted risk. What threshold to gate at, and which bases
 to move, is a decision for its own record; this one records only that the mechanism it built is the
 wrong tool for the number it found, which is what the trigger was for.
+
+## Claim tested, 2026-08-30 (fifth run): the inventory is reproducible
+
+This record's whole argument is that an inventory changes only when the image does. That had never
+been checked, because until the fourth run no inventory had ever been committed, so there was nothing
+for a second run to disagree with.
+
+The six inventories were committed from the fourth run's output. The fifth run re-catalogued the same
+six images and returned all six **byte-identical**, checked by SHA-256 against the committed copies
+rather than by line count:
+
+| inventory | sha256 (first 12) |
+| --- | --- |
+| `apache_airflow_2.11.2-python3.11` | `6dd5b12c2ad5` |
+| `apache_spark_3.5.9-python3` | `7f29b50c7f3b` |
+| `ghcr.io_mlflow_mlflow_v2.22.4` | `bec14f92716e` |
+| `minio_minio_RELEASE.2025-09-07` | `ecb4ba80d03a` |
+| `mlops-platform_mlflow_2.22.4` | `4595b137917a` |
+| `postgres_16.15-alpine` | `a9b9f2a62cf8` |
+
+So `make sbom` is idempotent in the sense that matters: run twice, it produces no diff. The claim that
+justified committing an inventory rather than the SPDX document is now evidence rather than an
+argument, and the sorting this file does explicitly — rather than trusting the cataloguer's order — is
+part of why.
+
+**What this does and does not establish.** Same machine, same syft digest, same image digests, same
+day. It demonstrates run-to-run reproducibility, which is what the diff-review property needs, and it
+says nothing yet about two machines agreeing. That would need a second host, and there is one authoring
+machine and one build machine, so it stays untested rather than assumed.
+
+**One thing it establishes that this record did not anticipate.** The scan reproduced exactly too —
+3,372 findings, identical per image and per severity — and it did so because the vulnerability database
+was the *same* database, served from the cache volume with `Built: 2026-08-30T06:27:52Z` unchanged. A
+scan result is a function of three things and only one of them is now pinned down. The inventory is
+reproducible, the scanner is pinned by digest with an expiry, and the database changes daily by design,
+because freshness is the whole point of it. Any gate defined on a count of findings therefore moves when
+the database moves, with no change to any image. That is a constraint on whatever threshold M1 settles
+on, and it is worth having in writing before the threshold is chosen rather than after it fires.

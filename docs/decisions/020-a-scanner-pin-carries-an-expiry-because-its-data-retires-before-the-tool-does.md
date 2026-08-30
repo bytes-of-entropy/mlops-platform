@@ -291,3 +291,30 @@ observation at no cost.
 validates resolving those digests from Docker Hub's API rather than from the build machine's image
 store — the method used for `apache/airflow` in record 018 and flagged then as worth watching. It has
 now been checked twice and been right twice.
+
+## Prediction 5 scored, 2026-08-30 (fifth run)
+
+**Prediction 5 — the cache turns five downloads into one, and the wall clock drops by more than half.
+CORRECT**, and measurable at last from two runs rather than from one.
+
+| run | database | `make scan` |
+| --- | --- | --- |
+| fourth | fetched once into an empty volume | 102s |
+| fifth | already in the volume, not fetched | 28s |
+
+Six documents both times, the same six SBOMs, the same scanner digest, and `Built:
+2026-08-30T06:27:52Z` on both — the fifth run reused the identical database rather than a newer one,
+which is why the finding counts came back identical to the digit.
+
+The fetch therefore costs about 74 seconds. Uncached, `--rm` would discard the database after every
+document, so six documents would pay it six times: roughly 6 × 74 + 28 ≈ 470s against the 102s actually
+observed. Even with generous error bars on a one-sample estimate of the fetch, "more than half" holds
+comfortably.
+
+Stated as arithmetic rather than as a clean A/B because there is no uncached measurement and there
+never will be: the uncached configuration is the one that failed with `database does not exist` and was
+fixed rather than benchmarked. Two points and a subtraction is what this can honestly claim, and it is
+enough for the direction and the order of magnitude.
+
+That closes the last open prediction in this record. Final score: one correct, two refuted, one
+correct-on-retry-but-recorded-refuted, one correct here.
