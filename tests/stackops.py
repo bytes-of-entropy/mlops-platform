@@ -19,8 +19,48 @@ import json
 import os
 import subprocess
 from dataclasses import dataclass
+from typing import Any
 
 from tests.conftest import REPO_ROOT, describe_process
+
+#: Fences a snippet's JSON inside stdout that is not *only* that JSON.
+#:
+#: Not defensiveness; a defect that happened. Two modules run a Python snippet inside a
+#: container and parsed the whole of stdout as one JSON document. MLflow 2.22 prints a
+#: "View run at ..." banner when a run exits and 2.13 did not, so the first suite run after
+#: the base bump failed with `Expecting value: line 1 column 1` on a round trip that had
+#: *succeeded* -- the JSON was there, with the right body, behind two lines of someone
+#: else's output.
+#:
+#: The general lesson rather than the MLflow one: a test that parses another program's
+#: stdout as if it owns all of it is asserting something about that program's console output
+#: that nobody promised. A library may start printing at any version. Fencing costs one line
+#: and cannot be broken by a banner nobody has written yet.
+PAYLOAD = "<<<payload>>>"
+
+
+def payload(stdout: str, what: str) -> Any:
+    """The JSON a snippet fenced with :data:`PAYLOAD`, out of whatever was printed around it.
+
+    `raw_decode` rather than `loads`, so output *after* the document is ignored the same way output
+    before the marker is. The last marker wins, so a snippet that printed twice is read as meaning
+    its final answer.
+    """
+    at = stdout.rfind(PAYLOAD)
+    if at < 0:
+        raise AssertionError(
+            f"{what}: no {PAYLOAD} marker in the container's stdout, so the snippet did not reach "
+            f"its print. Output was {stdout!r}"
+        )
+    tail = stdout[at + len(PAYLOAD) :].lstrip()
+    try:
+        value, _ = json.JSONDecoder().raw_decode(tail)
+    except json.JSONDecodeError as error:
+        raise AssertionError(
+            f"{what}: the text after {PAYLOAD} is not JSON ({error}). Output was {stdout!r}"
+        ) from error
+    return value
+
 
 #: The suite's own project name. Not cosmetic: compose derives the default from the directory
 #: basename, so without this the tier's containers and volumes are the ones `make up` created: one

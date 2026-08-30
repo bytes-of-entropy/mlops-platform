@@ -20,7 +20,6 @@ and unusable; the tests below share one stack and assert independently of each o
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterator
 from typing import Any
 
@@ -28,7 +27,7 @@ import pytest
 
 from tests.conftest import requires_docker, requires_local_credentials
 from tests.dagfile import declared
-from tests.stackops import FULL, Stack
+from tests.stackops import FULL, PAYLOAD, Stack, payload
 
 pytestmark = [pytest.mark.integration, requires_docker, requires_local_credentials]
 
@@ -58,7 +57,7 @@ request = urllib.request.Request(
     headers={{"Content-Type": "application/json"}},
     method="POST",
 )
-print(json.dumps(json.load(urllib.request.urlopen(request))))
+print({PAYLOAD!r} + json.dumps(json.load(urllib.request.urlopen(request))))
 """
 
 #: -tA: no alignment, no header, so each output line is a value and nothing else. The user and
@@ -86,9 +85,9 @@ def running_stack() -> Iterator[Stack]:
 def latest_run(current: Stack) -> dict[str, Any]:
     """The most recently started run in the smoke experiment, as MLflow reports it."""
     reported = current.check("mlflow query", "exec", "-T", "mlflow", "python3", "-c", QUERY_RUNS)
-    payload = json.loads(reported.stdout)
-    runs = payload.get("runs") or []
-    assert runs, f"MLflow holds no run in the {EXPERIMENT_NAME} experiment: {payload}"
+    parsed = payload(reported.stdout, "mlflow run lookup")
+    runs = parsed.get("runs") or []
+    assert runs, f"MLflow holds no run in the {EXPERIMENT_NAME} experiment: {parsed}"
     return max(runs, key=lambda run: int(run["info"]["start_time"]))
 
 

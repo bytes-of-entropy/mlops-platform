@@ -20,14 +20,13 @@ path than the one the DAG uses.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterator
 from typing import Any
 
 import pytest
 
 from tests.conftest import requires_docker, requires_local_credentials
-from tests.stackops import QUICKSTART, Stack
+from tests.stackops import PAYLOAD, QUICKSTART, Stack, payload
 
 pytestmark = [pytest.mark.integration, requires_docker, requires_local_credentials]
 
@@ -61,17 +60,19 @@ body = None
 if matched:
     body = client.get_object(Bucket={BUCKET!r}, Key=matched[0])["Body"].read().decode()
 
-print(json.dumps({{"run_id": run_id, "keys": keys, "matched": matched, "body": body}}))
+result = {{"run_id": run_id, "keys": keys, "matched": matched, "body": body}}
+print({PAYLOAD!r} + json.dumps(result))
 """
 
-BUCKET_EXISTS = """
+BUCKET_EXISTS = f"""
 import json, os
 import boto3
 
 client = boto3.client("s3", endpoint_url=os.environ["MLFLOW_S3_ENDPOINT_URL"])
 buckets = [entry["Name"] for entry in client.list_buckets().get("Buckets") or []]
-print(json.dumps(buckets))
+print({PAYLOAD!r} + json.dumps(buckets))
 """
+
 
 stack = Stack(QUICKSTART)
 
@@ -95,7 +96,7 @@ def test_the_provisioner_created_the_bucket_before_mlflow_started(running_stack:
     reported = running_stack.check(
         "minio buckets", "exec", "-T", "mlflow", "python", "-c", BUCKET_EXISTS
     )
-    buckets = json.loads(reported.stdout)
+    buckets = payload(reported.stdout, "minio buckets")
     assert BUCKET in buckets, (
         f"the artifact root names s3://{BUCKET}/ and MinIO holds {buckets}, so either the "
         "provisioner did not run or it created something else"
@@ -107,7 +108,7 @@ def test_an_artifact_round_trips_through_minio(running_stack: Stack) -> None:
     reported = running_stack.check(
         "artifact round trip", "exec", "-T", "mlflow", "python", "-c", ROUND_TRIP
     )
-    result: dict[str, Any] = json.loads(reported.stdout)
+    result: dict[str, Any] = payload(reported.stdout, "artifact round trip")
 
     assert result["matched"], (
         f"nothing under run {result['run_id']} ending in {ARTIFACT_NAME} appeared in "
