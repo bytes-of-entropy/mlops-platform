@@ -104,7 +104,7 @@ broken repository rather than like a wrong location:
 
 **On that last row, because it costs a confusing half hour otherwise.** Git for Windows already ships all
 three, in `usr\bin` beside the installation, but PowerShell does not have that directory on `PATH`, so a run
-from PowerShell skips those twenty tests and reports `174 passed, 34 skipped` with everything else green. Add it
+from PowerShell skips those twenty tests and reports `176 passed, 34 skipped` with everything else green. Add it
 for the session and they run:
 
 ```powershell
@@ -381,10 +381,10 @@ otherwise.
 | `ruff format --check .` | `58 files already formatted`: 34 Python and 25 Markdown, less `.pytest_cache/README.md`, which is ignored by git and therefore by the formatter |
 | `mypy` | `Success: no issues found in 32 source files` |
 | `pre-commit run --all-files` | 8 lines, each `Passed`; no summary line |
-| `pytest`, no runtime | `194 passed, 14 skipped` |
-| `pytest`, runtime but no credentials | `199 passed, 9 skipped`, derived rather than measured |
-| `pytest`, runtime and credentials, before `make sbom` | `207 passed, 1 skipped`, derived. `140 passed, 0 skipped` was measured on the build machine on 2026-08-30 and matched the row derived for it exactly; 68 assertions have landed since, so this row is again a derivation awaiting its measurement |
-| `pytest`, runtime and credentials, after `make sbom` | `212 passed, 0 skipped`, derived. A runtime clears thirteen of the fourteen skips; the fourteenth is an empty parameter set and only an inventory clears it. `test_an_inventory_is_sorted_and_shaped_for_review` is parameterised over the files in `sbom/`, so five inventories turn one skip into five checks, which is where the extra four in the total come from |
+| `pytest`, no runtime | `196 passed, 14 skipped` |
+| `pytest`, runtime but no credentials | `201 passed, 9 skipped`, derived rather than measured |
+| `pytest`, runtime and credentials, before `make sbom` | `209 passed, 1 skipped`, derived. `140 passed, 0 skipped` was measured on the build machine on 2026-08-30 and matched the row derived for it exactly; 70 assertions have landed since, so this row is again a derivation awaiting its measurement |
+| `pytest`, runtime and credentials, after `make sbom` | `214 passed, 0 skipped`, derived. A runtime clears thirteen of the fourteen skips; the fourteenth is an empty parameter set and only an inventory clears it. `test_an_inventory_is_sorted_and_shaped_for_review` is parameterised over the files in `sbom/`, so five inventories turn one skip into five checks, which is where the extra four in the total come from |
 | `docker images mlops-platform/mlflow` | one row, tag `2.13.0`, after `build` |
 | `make doctor` | three checks (`container runtime`, `credentials`, `postgres volume`), each `OK`, except that the volume check reports it cannot verify a volume created before the fingerprint existed |
 
@@ -410,7 +410,7 @@ plainly that the artefact it would check does not exist.
 **Every row above assumes `sh`, `sha256sum` and `od` are reachable.** Without them, subtract twenty from
 the passed count and add twenty to the skipped count in each row: two preflight tests execute the Postgres
 init script, and eighteen parse the Makefile's recipes, and all twenty are gated on a POSIX shell rather
-than on a runtime, so no amount of Docker unskips them. Measured, not derived: `174 passed, 34 skipped`
+than on a runtime, so no amount of Docker unskips them. Measured, not derived: `176 passed, 34 skipped`
 on the authoring machine with `sh`, `sha256sum` and `od` taken off `PATH`.
 
 **The tier reached the pass condition on the build machine twice**: `120 passed, 0 skipped` at the commit tagged `v0.1.0`, and `124 passed, 0 skipped` at `v0.1.2`, after `docs/decisions/015` added two artifact-store tests and two compose-contract tests. The second run is the stronger evidence: the first passed while a configured artifact root pointed at a bucket nothing created, because no test then walked that path. Two earlier runs are
