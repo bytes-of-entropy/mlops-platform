@@ -168,11 +168,11 @@ def test_both_entrypoints_run_the_doctor_before_starting_the_stack() -> None:
 #: both runs succeed, both write an inventory, and only one of them is the one in the diff.
 CATALOGUER_PINS = {
     "Makefile": re.compile(
-        r"^(?P<name>SYFT|GRYPE|SBOM_DIR|SCAN_FAIL_ON|GRYPE_DB_VOLUME)\s*\?=\s*(?P<value>\S+)$",
+        r"^(?P<name>SYFT|GRYPE|SBOM_DIR|GRYPE_DB_VOLUME)\s*\?=\s*(?P<value>\S+)$",
         re.MULTILINE,
     ),
     "make.ps1": re.compile(
-        r"^\$(?P<name>Syft|Grype|SbomDir|ScanFailOn|GrypeDbVolume)\s*=\s*'(?P<value>[^']+)'$",
+        r"^\$(?P<name>Syft|Grype|SbomDir|GrypeDbVolume)\s*=\s*'(?P<value>[^']+)'$",
         re.MULTILINE,
     ),
 }
@@ -182,7 +182,6 @@ PIN_ALIASES = {
     "Syft": "SYFT",
     "Grype": "GRYPE",
     "SbomDir": "SBOM_DIR",
-    "ScanFailOn": "SCAN_FAIL_ON",
     "GrypeDbVolume": "GRYPE_DB_VOLUME",
 }
 
@@ -291,32 +290,25 @@ def test_the_scan_reads_the_sbom_rather_than_the_image() -> None:
     inventory was for.
     """
     for name in ("Makefile", "make.ps1"):
-        text = (REPO_ROOT / name).read_text(encoding="utf-8")
-        body = re.search(
-            r"^(?:scan:|    'scan' \{).*?(?=^(?:\S|    \}))", text, re.MULTILINE | re.DOTALL
-        )
-        assert body, f"{name} has no scan target for this test to look inside"
-        assert "sbom:/sbom/" in body.group(0), (
+        assert "sbom:/sbom/" in scan_body(name), (
             f"{name}'s scan does not point the scanner at a generated SBOM"
         )
 
 
 #: An environment override, in each entrypoint's own syntax.
-MAKE_OVERRIDABLE = re.compile(
-    r"^(?P<name>SYFT|GRYPE|SBOM_DIR|SCAN_FAIL_ON|GRYPE_DB_VOLUME)\s*\?=", re.MULTILINE
-)
+MAKE_OVERRIDABLE = re.compile(r"^(?P<name>SYFT|GRYPE|SBOM_DIR|GRYPE_DB_VOLUME)\s*\?=", re.MULTILINE)
 PS_OVERRIDABLE = re.compile(
-    r"^if \(\$env:(?P<name>SYFT|GRYPE|SBOM_DIR|SCAN_FAIL_ON|GRYPE_DB_VOLUME)\)\s*\{",
+    r"^if \(\$env:(?P<name>SYFT|GRYPE|SBOM_DIR|GRYPE_DB_VOLUME)\)\s*\{",
     re.MULTILINE,
 )
 
 
-def test_both_entrypoints_take_the_same_four_settings_from_the_environment() -> None:
-    """An exploratory scan needs `SCAN_FAIL_ON=none`, and needing it on one platform only is a trap.
+def test_both_entrypoints_take_the_same_settings_from_the_environment() -> None:
+    """A setting honoured on one platform and ignored on the other is worse than no setting.
 
-    The first scan of an image nobody has scanned wants the whole finding table rather than a gate
-    that stops at the first High. If that is reachable from the Makefile and not from make.ps1, the
-    person on Windows edits a tracked file to get it and the override is not what they used.
+    The person who needs it edits a tracked file to get it, and what they ran is then not what is
+    committed. `SBOM_DIR` and `GRYPE_DB_VOLUME` are the two reached for in practice; the cataloguer
+    pins are here because a machine pinning a different syft writes a different inventory.
     """
     expected = set(SUPPLY_SETTINGS)
     makefile = set(MAKE_OVERRIDABLE.findall((REPO_ROOT / "Makefile").read_text(encoding="utf-8")))
@@ -325,45 +317,113 @@ def test_both_entrypoints_take_the_same_four_settings_from_the_environment() -> 
     assert powershell == expected, f"make.ps1 ignores: {sorted(expected - powershell)}"
 
 
-def test_both_entrypoints_spell_a_report_only_scan_the_same_way() -> None:
-    """`--fail-on none` is not a grype value; a report-only run omits the flag.
+#: A make recipe: the target line and everything indented under it, to the next unindented line.
+MAKE_RECIPE = "^{target}:.*?(?=^\\S)"
 
-    So both files need the same escape hatch, and it has to be the same word in both, or the one
-    documented in `docs/setup.md` works on one platform and is a no-op on the other.
+#: A PowerShell switch arm, or a function body. Both end at the closing brace that sits at their own
+#: indentation, which is the only one that does.
+PS_ARM = "^    '{target}' \\{{.*?^    \\}}"
+PS_FUNCTION = "^function {name} \\{{.*?^\\}}"
+
+
+def scan_body(name: str) -> str:
+    """Everything the `scan` target reaches, following delegation rather than stopping at it.
+
+    Both entrypoints factored the scanning out of the gate once there were three things to do with
+    one answer: the Makefile made `scan` depend on `scan-report`, and make.ps1 moved it into
+    `Invoke-Scan`. A body-only search would then report a missing docker invocation that is one
+    delegation away, which is a test failing for the wrong reason and the most expensive kind.
+
+    So this walks what the target actually reaches. Named delegations only -- no general resolver --
+    because the point is to assert the scan path's *content*, and a resolver clever enough to follow
+    anything would also be clever enough to follow its way to a passing answer.
     """
-    for name in ("Makefile", "make.ps1"):
-        text = (REPO_ROOT / name).read_text(encoding="utf-8")
-        body = re.search(
-            r"^(?:scan:|    'scan' \{).*?(?=^(?:\S|    \}))", text, re.MULTILINE | re.DOTALL
-        )
-        assert body, f"{name} has no scan target"
-        assert "none" in body.group(0), (
-            f"{name}'s scan has no report-only path, so an exploratory scan needs a file edit"
-        )
+    text = (REPO_ROOT / name).read_text(encoding="utf-8")
+    flags = re.MULTILINE | re.DOTALL
+    found = ""
+    if name == "Makefile":
+        for target in ("scan", "scan-report"):
+            match = re.search(MAKE_RECIPE.format(target=target), text, flags)
+            assert match, f"Makefile has no {target} target"
+            found += match.group(0)
+    else:
+        match = re.search(PS_ARM.format(target="scan"), text, flags)
+        assert match, "make.ps1 has no scan branch"
+        found += match.group(0)
+        for helper in ("Invoke-Scan", "Invoke-GrypeDb"):
+            if helper in found:
+                body = re.search(PS_FUNCTION.format(name=helper), text, flags)
+                assert body, f"make.ps1 calls {helper} and does not define it"
+                found += body.group(0)
+    return found
 
 
-def test_the_scan_reports_the_database_before_it_reports_a_finding() -> None:
+def test_the_scan_fetches_the_database_and_then_reports_it() -> None:
     """A scan result is a function of the scanner, the database and the SBOM.
 
     Only the third is visible in the output, and the second is the one that goes wrong: a database
-    too old to load stops the scan; one merely old enough to be useless does not. Printing
-    its build date beside the findings is what makes a pasted result attributable months later.
+    too old to load stops the scan; one merely old enough to be useless does not. Printing its build
+    date beside the findings is what makes a pasted result readable months later.
+
+    Both verbs, in that order, because `db status` reports on a database and does not fetch one. The
+    first version of this target had the report and not the fetch, so on a fresh cache the check
+    written to observe the database was what stopped it existing, and no scan ever ran.
+    """
+    for name in ("Makefile", "make.ps1"):
+        body = scan_body(name)
+        assert "status" in body, f"{name}'s scan does not report the database it used"
+        assert "update" in body, (
+            f"{name}'s scan reports the database without fetching it, so a fresh cache reports "
+            f"`database does not exist` and the scan is never reached"
+        )
+
+
+def test_neither_entrypoint_gates_on_severity_any_more() -> None:
+    """`--fail-on` is the gate record 022 replaced, and leaving it in would gate twice.
+
+    After record 021 the residue is 138 Critical and 870 High with no fix inside the current major
+    line, so a severity threshold fails identically on every run and tells nobody anything. Worse,
+    it would fail the build *before* the baseline comparison ran, so the useful message -- which
+    advisory is new -- would never be printed.
     """
     for name in ("Makefile", "make.ps1"):
         text = (REPO_ROOT / name).read_text(encoding="utf-8")
-        body = re.search(
-            r"^(?:scan:|    'scan' \{).*?(?=^(?:\S|    \}))", text, re.MULTILINE | re.DOTALL
+        offending = [
+            line.strip()
+            for line in text.splitlines()
+            if "--fail-on" in line and not line.strip().startswith("#")
+        ]
+        assert not offending, f"{name} still gates on severity: {offending}"
+
+
+def test_both_entrypoints_gate_on_the_committed_baseline() -> None:
+    """The gate itself, in both, because a scan that reports and never compares is a report.
+
+    `supply.findings` is what turns a scan into a gate: it fails on an advisory identifier absent
+    from that image's committed baseline. A run that produced the table and skipped the comparison
+    would look identical in a log right up to the exit code.
+    """
+    for name in ("Makefile", "make.ps1"):
+        body = scan_body(name)
+        assert "supply.findings" in body, (
+            f"{name}'s scan does not compare against a baseline, so it reports rather than gates"
         )
-        assert body, f"{name} has no scan target"
-        assert "db" in body.group(0) and "status" in body.group(0), (
-            f"{name}'s scan does not report the vulnerability database it used"
-        )
-        # `db status` reports on a database and does not fetch one. Asserted because the first
-        # version of this target had the report and not the fetch, so on a fresh cache the check
-        # meant to observe the database was what stopped it existing, and no scan ever ran.
-        assert "update" in body.group(0), (
-            f"{name}'s scan reports the database without fetching it, so a fresh cache reports "
-            f"`database does not exist` and the scan is never reached"
+        assert ".known.txt" in body, f"{name}'s scan names no baseline file"
+
+
+def test_a_baseline_moves_only_on_purpose() -> None:
+    """Accepting has to be possible, separate, and impossible to do by accident.
+
+    A `--force` on `scan` would have been one keystroke from silently accepting whatever appeared,
+    which is the failure mode record 019 designed `security/exceptions.toml` around. A separate
+    target means the record of what was accepted is a diff somebody reads.
+    """
+    for name in ("Makefile", "make.ps1"):
+        text = (REPO_ROOT / name).read_text(encoding="utf-8")
+        assert "scan-accept" in text, f"{name} has no way to move a baseline"
+        assert "--accept" in text, f"{name}'s scan-accept does not pass --accept"
+        assert "--accept" not in scan_body(name), (
+            f"{name}'s scan target can accept advisories, so the gate can be passed by running it"
         )
 
 
@@ -376,11 +436,6 @@ def test_the_database_cache_is_shared_across_documents() -> None:
     and slow is what stops it being run.
     """
     for name in ("Makefile", "make.ps1"):
-        text = (REPO_ROOT / name).read_text(encoding="utf-8")
-        body = re.search(
-            r"^(?:scan:|    'scan' \{).*?(?=^(?:\S|    \}))", text, re.MULTILINE | re.DOTALL
-        )
-        assert body, f"{name} has no scan target"
-        assert "GRYPE_DB_CACHE_DIR" in body.group(0), (
+        assert "GRYPE_DB_CACHE_DIR" in scan_body(name), (
             f"{name}'s scan names no database cache, so every document pays for its own download"
         )

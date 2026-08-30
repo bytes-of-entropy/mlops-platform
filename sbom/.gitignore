@@ -1,5 +1,8 @@
-# The SPDX documents are generated, not reviewed: each carries a document UUID and a creation
-# timestamp, so a committed one produces a diff on every regeneration whether the image changed
-# or not. What gets committed is the sorted inventory beside it, which carries neither.
-# Record 019 argues it; tests/test_security_exceptions.py checks the shape of what lands here.
+# The SPDX documents and the raw scan reports are generated, not reviewed. SPDX carries a document
+# UUID and a creation timestamp, and a grype report carries the database it was matched against, so
+# a committed one diffs on every regeneration whether anything changed or not.
+#
+# What gets committed here is the sorted inventory (record 019) and the advisory baseline the scan
+# gates against (record 022). Both are small, sorted, and change only when the image does.
 *.spdx.json
+*.findings.json

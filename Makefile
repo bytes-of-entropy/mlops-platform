@@ -48,10 +48,9 @@ WAIT_TIMEOUT := 300
 SYFT            ?= anchore/syft:v1.51.1@sha256:95fe0835e5bebc6f8b1f8acef68d47d63d594ef4c0f25c097ff853b23cbac74c
 GRYPE           ?= anchore/grype:v0.118.0@sha256:8a93fc48da96bd6ec5981279d099b69de11541dc68fdf222fb9161f8ff284af7
 SBOM_DIR        ?= sbom
-SCAN_FAIL_ON    ?= high
 GRYPE_DB_VOLUME ?= mlops-platform-grype-db
 
-.PHONY: help setup test lint fmt hooks check doctor build sbom scan up up-quickstart down clean reset ps logs config
+.PHONY: help setup test lint fmt hooks check doctor build sbom scan-report scan scan-accept up up-quickstart down clean reset ps logs config
 
 help:
 	@echo "setup           create .venv and install dev dependencies"
@@ -62,7 +61,9 @@ help:
 	@echo "doctor          check the machine can start the stack, and say what is wrong"
 	@echo "build           build the one image in the spine, without starting anything"
 	@echo "sbom            catalogue every image and write the reviewable inventories"
-	@echo "scan            report the database build date, then scan and fail on $(SCAN_FAIL_ON)+"
+	@echo "scan-report      scan every SBOM and print what was found, gating on nothing"
+	@echo "scan            the same scan, failing on an advisory not in the baseline"
+	@echo "scan-accept     rewrite the baselines from the current scan, as a diff to review"
 	@echo "up              start the full spine (all services)"
 	@echo "up-quickstart   start the 4 GB / 2 CPU reviewer profile"
 	@echo "down            stop and remove containers, KEEP volumes"
@@ -137,12 +138,14 @@ sbom:
 	    "$(SBOM_DIR)/$$name.spdx.json" "$(SBOM_DIR)/$$name.packages.txt" || exit 1; \
 	done
 
-# Reads the SBOM rather than the image, so what is scanned is what was inventoried and a finding
-# can be traced to a committed line. Accepted findings are not wired in yet: security/exceptions.toml
-# is empty, and generating a scanner ignore file for zero entries would be a mechanism with nothing
-# to mechanise. The expiry check in the contract tier runs today; the bridge is owed at the first
-# accepted finding, and record 019 records that as an open limit rather than a done thing.
-scan:
+# `scan-report` scans and says what it found. `scan` is the same work plus the gate, which is why it
+# depends on it rather than repeating it, and `scan-accept` is the same work plus the opposite of the
+# gate. One place where a document is scanned, three things to do with the answer.
+#
+# Reading the SBOM rather than the image is what makes a finding traceable to a committed line. Two
+# outputs from one pass: `table` for a person reading the log, `json` for the gate, because parsing the
+# table would mean owning a column layout nobody promised.
+scan-report:
 	@ls $(SBOM_DIR)/*.spdx.json >/dev/null 2>&1 || \
 	  { echo "no SBOMs in $(SBOM_DIR); run 'make sbom' first"; exit 1; }
 	@docker run --rm -v $(GRYPE_DB_VOLUME):/db -e GRYPE_DB_CACHE_DIR=/db \
@@ -151,14 +154,44 @@ scan:
 	@docker run --rm -v $(GRYPE_DB_VOLUME):/db -e GRYPE_DB_CACHE_DIR=/db \
 	  $(GRYPE) db status || \
 	  { echo "the vulnerability database will not load; see docs/decisions/020"; exit 1; }
-	@gate="--fail-on $(SCAN_FAIL_ON)"; \
-	if [ "$(SCAN_FAIL_ON)" = "none" ]; then gate=""; fi; \
-	for document in $(SBOM_DIR)/*.spdx.json; do \
-	  echo "scanning $$document"; \
+	@for document in $(SBOM_DIR)/*.spdx.json; do \
+	  name=$$(basename $$document .spdx.json); \
+	  echo "scanning $$name"; \
 	  docker run --rm -v "$$PWD/$(SBOM_DIR):/sbom" \
 	    -v $(GRYPE_DB_VOLUME):/db -e GRYPE_DB_CACHE_DIR=/db \
-	    $(GRYPE) "sbom:/sbom/$$(basename $$document)" $$gate || exit 1; \
+	    $(GRYPE) "sbom:/sbom/$$name.spdx.json" \
+	    -o table -o "json=/sbom/$$name.findings.json" || exit 1; \
 	done
+
+# The gate is `supply.findings`, not `--fail-on`. After record 021 the residue is 138 Critical and 870
+# High with no fix inside the current major line, so a severity threshold fails identically every run
+# and says nothing. What fails a build here is an advisory *identifier* absent from the committed
+# baseline for that image, which is a thing somebody can act on. Record 022 argues it.
+#
+# Every document is compared before anything fails, so one new advisory in the first image does not
+# hide three in the last.
+scan: scan-report
+	@failed=""; \
+	for document in $(SBOM_DIR)/*.spdx.json; do \
+	  name=$$(basename $$document .spdx.json); \
+	  $(PY) -m supply.findings \
+	    "$(SBOM_DIR)/$$name.known.txt" "$(SBOM_DIR)/$$name.findings.json" \
+	    || failed="$$failed $$name"; \
+	done; \
+	if [ -n "$$failed" ]; then \
+	  echo "unbaselined advisories in:$$failed"; exit 1; \
+	fi
+
+# Deliberate, and a separate target for that reason: it rewrites every baseline from the current scan,
+# so the record of what changed is the git diff and the review is reading it. A `--force` on `scan`
+# would have been one keystroke from accepting whatever appeared.
+scan-accept: sbom scan-report
+	@for document in $(SBOM_DIR)/*.spdx.json; do \
+	  name=$$(basename $$document .spdx.json); \
+	  $(PY) -m supply.findings --accept \
+	    "$(SBOM_DIR)/$$name.known.txt" "$(SBOM_DIR)/$$name.findings.json" || exit 1; \
+	done
+	@echo "review the diff in $(SBOM_DIR)/*.known.txt before committing it"
 
 up: doctor
 	$(COMPOSE) --profile full up -d --build --wait --wait-timeout $(WAIT_TIMEOUT)

@@ -28,15 +28,60 @@ $WaitTimeout = '300'
 $Syft = 'anchore/syft:v1.51.1@sha256:95fe0835e5bebc6f8b1f8acef68d47d63d594ef4c0f25c097ff853b23cbac74c'
 $Grype = 'anchore/grype:v0.118.0@sha256:8a93fc48da96bd6ec5981279d099b69de11541dc68fdf222fb9161f8ff284af7'
 $SbomDir = 'sbom'
-$ScanFailOn = 'high'
 $GrypeDbVolume = 'mlops-platform-grype-db'
 # Mirrors the Makefile's `?=`. Kept as four separate overrides after the defaults rather than folded
 # into them, so the line a reader looks at to learn the pinned version is still a plain assignment.
 if ($env:SYFT) { $Syft = $env:SYFT }
 if ($env:GRYPE) { $Grype = $env:GRYPE }
 if ($env:SBOM_DIR) { $SbomDir = $env:SBOM_DIR }
-if ($env:SCAN_FAIL_ON) { $ScanFailOn = $env:SCAN_FAIL_ON }
 if ($env:GRYPE_DB_VOLUME) { $GrypeDbVolume = $env:GRYPE_DB_VOLUME }
+
+function Get-SbomNames {
+    <#
+        The base name of every SBOM in $SbomDir, which is the stem every other file for that image
+        shares: <name>.spdx.json, <name>.findings.json, <name>.known.txt.
+    #>
+    $documents = @(Get-ChildItem -Path $SbomDir -Filter '*.spdx.json' -ErrorAction Ignore)
+    if (-not $documents) { throw "no SBOMs in $SbomDir; run './make.ps1 sbom' first" }
+    $documents | ForEach-Object { $_.BaseName -replace '\.spdx$', '' }
+}
+
+function Invoke-Scan {
+    <#
+        Scan every SBOM and write both outputs: a table for a person reading the log and JSON for the
+        gate. Parsing the table would mean owning a column layout nobody promised.
+
+        Shared by scan-report, scan and scan-accept, which differ only in what they do with the
+        answer: nothing, gate on it, or accept it.
+    #>
+    $mount = ($PWD.Path -replace '\\', '/') + "/$SbomDir"
+    Invoke-GrypeDb
+    foreach ($name in Get-SbomNames) {
+        Write-Output "scanning $name"
+        Invoke-Checked 'docker' @(
+            'run', '--rm', '-v', "${mount}:/sbom",
+            '-v', "${GrypeDbVolume}:/db", '-e', 'GRYPE_DB_CACHE_DIR=/db',
+            $Grype, "sbom:/sbom/$name.spdx.json",
+            '-o', 'table', '-o', "json=/sbom/$name.findings.json"
+        )
+    }
+}
+
+function Invoke-GrypeDb {
+    <#
+        Fetch the vulnerability database, then say what was fetched. `db status` reports on a
+        database and does not fetch one, so on a fresh cache the report alone was what stopped the
+        database existing; see docs/decisions/020. A scan result is a function of the SBOM, the
+        scanner and the database, and this is the only one of the three the log would not otherwise
+        record.
+    #>
+    foreach ($verb in @('update', 'status')) {
+        Invoke-Checked 'docker' @(
+            'run', '--rm', '-v', "${GrypeDbVolume}:/db", '-e', 'GRYPE_DB_CACHE_DIR=/db',
+            $Grype, 'db', $verb
+        )
+    }
+}
 
 function Invoke-Checked {
     param([string]$Exe, [string[]]$Arguments)
@@ -57,7 +102,9 @@ switch ($Target) {
         Write-Output 'doctor          check the machine can start the stack, and say what is wrong'
         Write-Output 'build           build the one image in the spine, without starting anything'
         Write-Output 'sbom            catalogue every image and write the reviewable inventories'
-        Write-Output 'scan            report the database build date, then scan and fail on high+'
+        Write-Output 'scan-report      scan every SBOM and print what was found, gating on nothing'
+        Write-Output 'scan            the same scan, failing on an advisory not in the baseline'
+        Write-Output 'scan-accept     rewrite the baselines from the current scan, as a diff to review'
         Write-Output 'up              start the full spine (all services)'
         Write-Output 'up-quickstart   start the 4 GB / 2 CPU reviewer profile'
         Write-Output 'down            stop and remove containers, KEEP volumes'
@@ -121,36 +168,41 @@ switch ($Target) {
             )
         }
     }
+    'scan-report' {
+        Invoke-Scan
+    }
     'scan' {
-        # Reads the SBOM rather than the image, so what is scanned is what was inventoried.
-        $mount = ($PWD.Path -replace '\\', '/') + "/$SbomDir"
-        $documents = @(Get-ChildItem -Path $SbomDir -Filter '*.spdx.json' -ErrorAction Ignore)
-        # Fetch, then report. `db status` reports on a database and does not fetch one, so on a
-        # fresh cache volume the check meant to observe the database was what stopped it existing:
-        # `database does not exist`, every run, and the scan never reached. `db update` is a no-op
-        # when the cache is current, so the cost of having both is a few seconds on the first run.
-        Invoke-Checked 'docker' @(
-            'run', '--rm', '-v', "${GrypeDbVolume}:/db", '-e', 'GRYPE_DB_CACHE_DIR=/db',
-            $Grype, 'db', 'update'
-        )
-        # The build date, before any finding. A scan result is a function of the scanner, the
-        # database and the SBOM, and only the third is visible in the output.
-        Invoke-Checked 'docker' @(
-            'run', '--rm', '-v', "${GrypeDbVolume}:/db", '-e', 'GRYPE_DB_CACHE_DIR=/db',
-            $Grype, 'db', 'status'
-        )
-        if (-not $documents) { throw "no SBOMs in $SbomDir; run './make.ps1 sbom' first" }
-        foreach ($document in $documents) {
-            Write-Output "scanning $($document.Name)"
-            # 'none' means report and do not gate, which grype spells by omitting the flag
-            # rather than by a value. The first scan of an unscanned image wants the whole table.
-            $gate = if ($ScanFailOn -eq 'none') { @() } else { @('--fail-on', $ScanFailOn) }
-            Invoke-Checked 'docker' (@(
-                'run', '--rm', '-v', "${mount}:/sbom",
-                '-v', "${GrypeDbVolume}:/db", '-e', 'GRYPE_DB_CACHE_DIR=/db',
-                $Grype, "sbom:/sbom/$($document.Name)"
-            ) + $gate)
+        # The gate is supply.findings rather than --fail-on. After record 021 the residue is 138
+        # Critical and 870 High with no fix inside the current major, so a severity threshold fails
+        # identically every run and says nothing. What fails here is an advisory identifier absent
+        # from the committed baseline. Record 022 argues it.
+        #
+        # Every document is compared before anything throws, so one new advisory in the first image
+        # does not hide three in the last.
+        Invoke-Scan
+        $failed = @()
+        foreach ($name in Get-SbomNames) {
+            & $Py @('-m', 'supply.findings', "$SbomDir/$name.known.txt",
+                    "$SbomDir/$name.findings.json")
+            if ($LASTEXITCODE -ne 0) { $failed += $name }
         }
+        if ($failed.Count -gt 0) {
+            throw ('unbaselined advisories in: {0}' -f ($failed -join ' '))
+        }
+    }
+    'scan-accept' {
+        # Deliberate, and separate from `scan` for that reason: it rewrites every baseline from the
+        # current scan, so the record of what changed is the git diff and the review is reading it.
+        & $PSCommandPath 'sbom'
+        if ($LASTEXITCODE -ne 0) { throw 'sbom failed' }
+        Invoke-Scan
+        foreach ($name in Get-SbomNames) {
+            Invoke-Checked $Py @(
+                '-m', 'supply.findings', '--accept',
+                "$SbomDir/$name.known.txt", "$SbomDir/$name.findings.json"
+            )
+        }
+        Write-Output "review the diff in $SbomDir/*.known.txt before committing it"
     }
     'up' {
         Invoke-Checked $Py @('-m', 'preflight')
