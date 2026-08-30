@@ -104,7 +104,7 @@ broken repository rather than like a wrong location:
 
 **On that last row, because it costs a confusing half hour otherwise.** Git for Windows already ships all
 three, in `usr\bin` beside the installation, but PowerShell does not have that directory on `PATH`, so a run
-from PowerShell skips those twenty tests and reports `187 passed, 34 skipped` with everything else green. Add it
+from PowerShell skips those twenty tests and reports `203 passed, 33 skipped` with everything else green. Add it
 for the session and they run:
 
 ```powershell
@@ -377,14 +377,13 @@ otherwise.
 
 | Command | Expected output |
 | --- | --- |
-| `ruff check .` | `All checks passed!` for 35 paths: the 34 modules plus `pyproject.toml`, read for configuration |
-| `ruff format --check .` | `59 files already formatted`: 34 Python and 26 Markdown, less `.pytest_cache/README.md`, which is ignored by git and therefore by the formatter |
-| `mypy` | `Success: no issues found in 32 source files` |
+| `ruff check .` | `All checks passed!` for 36 paths: the 35 modules plus `pyproject.toml`, read for configuration |
+| `ruff format --check .` | `61 files already formatted`: 35 Python and 27 Markdown, less `.pytest_cache/README.md`, which is ignored by git and therefore by the formatter. The six committed inventories are neither, so the formatter never reads them |
+| `mypy` | `Success: no issues found in 33 source files` |
 | `pre-commit run --all-files` | 8 lines, each `Passed`; no summary line |
-| `pytest`, no runtime | `207 passed, 14 skipped` |
-| `pytest`, runtime but no credentials | `212 passed, 9 skipped`, derived rather than measured |
-| `pytest`, runtime and credentials, before `make sbom` | `220 passed, 1 skipped`, derived |
-| `pytest`, runtime and credentials, after `make sbom` | `226 passed, 0 skipped`, derived. A runtime clears thirteen of the fourteen skips; the fourteenth is an empty parameter set and only an inventory clears it. `test_an_inventory_is_sorted_and_shaped_for_review` is parameterised over the files in `sbom/`, so six inventories turn one skip into six checks, which is where the extra six in the total come from |
+| `pytest`, no runtime | `223 passed, 13 skipped` |
+| `pytest`, runtime but no credentials | `228 passed, 8 skipped`, derived rather than measured |
+| `pytest`, runtime and credentials | `236 passed, 0 skipped`, derived. The six inventories are committed as of this commit, so the parameterised shape check has real files in any clone and there is no longer a before-and-after-`make sbom` distinction to draw |
 | `docker images mlops-platform/mlflow` | one row, tag `2.22.4`, after `build` |
 | `make doctor` | three checks (`container runtime`, `credentials`, `postgres volume`), each `OK`, except that the volume check reports it cannot verify a volume created before the fingerprint existed |
 
@@ -392,27 +391,29 @@ Only the first `pytest` row is measured. The other three are derived from which 
 because the authoring machine has no container runtime and cannot produce any of them. If a run disagrees
 with the row it should be on, **that disagreement is the finding**. Record it before fixing it.
 
-The derivations have now matched a measurement twice. `140 passed, 0 skipped` was derived and then
-measured on 2026-08-30; later the same day the post-`make sbom` row was derived at `220 passed, 0 skipped`
-on a machine with no container runtime, and the build machine measured exactly that. Two matches is not a
-guarantee and the three rows below the first stay labelled derived until each has been run, but the
-derivation is a method rather than a guess: each row is the first row plus the tests whose guards the run
-would clear, and that arithmetic has been right every time it has been checked.
+The derivation is a method rather than a guess: each row is the first row plus the tests whose guards a
+run would clear. It has matched three times — `140 passed, 0 skipped`, then `220 passed, 1 skipped`, then
+`220 passed, 0 skipped`, each derived on a machine with no container runtime and then measured exactly.
 
-The fourteen skips divide as five image-resolution checks, one per registry reference: the four tags
-the spine pulls plus the base the one built image comes from (they ask a registry whether each still
-resolves, which needs a docker client); two artifact-store checks; three idempotency tests; three that
-run the smoke DAG; and one empty parameter set, because the committed-inventory check is parameterised
-over the files in `sbom/` and there are none yet. Eight of them need credentials as well as a runtime -- the
-two artifact-store checks reach into MinIO and the six DAG and idempotency tests start real stacks --
-which is why the middle row clears five rather than thirteen. The empty-set skip is the only one a container
-runtime does not clear: it clears on the first `make sbom`, and until then it is the suite saying
-plainly that the artefact it would check does not exist.
+The fourth time is worth reading precisely, because it is the one that shows what the method does and does
+not buy. `226 passed, 0 skipped` was derived; the run collected 226 tests and reported `225 passed, 1
+failed`. The arithmetic was right and the claim was wrong. A derived row predicts *which tests will run*,
+which is a fact about guards and can be reasoned out here; it cannot predict whether they pass, which is a
+fact about the world and is the entire reason the run happens.
+
+The thirteen skips divide as five image-resolution checks, one per registry reference: the five images the
+spine pulls, including the base the one built image comes from (they ask a registry whether each still
+resolves, which needs a docker client); two artifact-store checks; three idempotency tests; and three that
+run the smoke DAG. Eight of them need credentials as well as a runtime -- the two artifact-store checks
+reach into MinIO and the six DAG and idempotency tests start real stacks -- which is why the middle row
+clears five rather than thirteen. There used to be a fourteenth, an empty parameter set where the
+committed-inventory check had no files to run against; committing the inventories turned it into six real
+assertions.
 
 **Every row above assumes `sh`, `sha256sum` and `od` are reachable.** Without them, subtract twenty from
 the passed count and add twenty to the skipped count in each row: two preflight tests execute the Postgres
 init script, and eighteen parse the Makefile's recipes, and all twenty are gated on a POSIX shell rather
-than on a runtime, so no amount of Docker unskips them. Measured, not derived: `187 passed, 34 skipped`
+than on a runtime, so no amount of Docker unskips them. Measured, not derived: `203 passed, 33 skipped`
 on the authoring machine with `sh`, `sha256sum` and `od` taken off `PATH`.
 
 **The tier reached the pass condition on the build machine twice**: `120 passed, 0 skipped` at the commit tagged `v0.1.0`, and `124 passed, 0 skipped` at `v0.1.2`, after `docs/decisions/015` added two artifact-store tests and two compose-contract tests. The second run is the stronger evidence: the first passed while a configured artifact root pointed at a bucket nothing created, because no test then walked that path. Two earlier runs are
@@ -521,84 +522,68 @@ because `--rm` discards the container filesystem and an uncached run downloads i
 
 Run `build` first. The one image built here has to exist locally before there is anything to catalogue.
 
-**Where this stands: the scan ran, and its answer was a version bump.**
+**Where this stands: the scan ran, the bases moved, and a third of the findings went with them.**
 
-The third attempt worked — `grype db update` fetched schema v6.1.9 built that morning, and all six
-documents were scanned in 97 seconds. It returned **5,017 findings: 185 Critical, 1,197 High, 1,390
-unique advisory identifiers**, and **4,121 of the 5,017 name a fixed version.**
+The first scan that worked returned **5,017 findings — 185 Critical, 1,197 High**, with 4,121 of them
+naming a fixed version. Every image was 12–21 months old and 731 of the 1,382 Critical-and-High were
+`deb` packages, so the number measured staleness rather than risk accepted with open eyes. Record 019 had
+written down in advance that if a clean scan would need more than a handful of exceptions then the bases
+are the problem; 1,382 is not a handful, so record 021 bumped every pulled reference to the newest release
+in its current major line rather than writing a page of accepted CVEs.
 
-Measured on the images as they were *before* the bump described below, so the tags in this table are the
-old ones:
-
-| image, as scanned | packages | findings | Critical | High |
+| image | was → now | findings | Critical | High |
 | --- | --- | --- | --- | --- |
-| `apache/spark:3.5.1-python3` | 617 | 1,750 | 5 | 93 |
-| `apache/airflow:2.9.2-python3.11` | 586 | 1,566 | 88 | 481 |
-| `mlops-platform/mlflow:2.13.0` | 184 | 603 | 27 | 212 |
-| `ghcr.io/mlflow/mlflow:v2.13.0` | 179 | 603 | 27 | 212 |
-| `minio/minio:RELEASE.2024-06-04` | 284 | 260 | 27 | 77 |
-| `postgres:16.3-alpine` | 50 | 235 | 11 | 122 |
+| `apache/airflow` | `2.9.2` → `2.11.2-python3.11` | 1,566 → 1,193 | 88 → 68 | 481 → 320 |
+| `apache/spark` | `3.5.1` → `3.5.9-python3` | 1,750 → 952 | 5 → **9** | 93 → **121** |
+| `ghcr.io/mlflow/mlflow` | `v2.13.0` → `v2.22.4` | 603 → 468 | 27 → 18 | 212 → 163 |
+| `mlops-platform/mlflow` | `2.13.0` → `2.22.4` | 603 → 468 | 27 → 18 | 212 → 163 |
+| `minio/minio` | `2024-06-04` → `2025-09-07` | 260 → 222 | 27 → 24 | 77 → 66 |
+| `postgres` | `16.3` → `16.15-alpine` | 235 → **69** | 11 → **1** | 122 → **37** |
+| **total** | | **5,017 → 3,372** | **185 → 138** | **1,197 → 870** |
 
-Two things in that table are worth more than the totals. **The built image and its base are identical**
-— 603 findings, 27 Critical, 212 High each — so the five packages this repository adds (`boto3`,
-`botocore`, `jmespath`, `psycopg2-binary`, `s3transfer`) contribute *zero* findings at any severity.
-Nothing about the vulnerability profile of the one image built here is attributable to a decision made
-here. And **the severity is in the operating system, not the application**: of the 1,382 Critical and
-High, 731 are `deb` packages and 39 `apk`.
+A third fewer findings, and four of record 021's six predictions refuted. Three results are worth more
+than the total.
 
-So the number is a measurement of staleness. Every image was 12–21 months old, and 90% of the serious
-findings name a version that fixes them. Record 019 had written down in advance that if a clean scan
-would need more than a handful of exceptions then the bases are the problem — and 1,382 is not a
-handful, so **the exceptions mechanism will not be used to make this gate pass.** Record 021 bumps every
-pulled reference to the newest release in its current major line instead:
+**`apache/spark` got safer and more severe at the same time.** Findings fell 46% while Critical rose from
+5 to 9 and High from 93 to 121. A threshold set from a total would have read that image as improving while
+the count that would actually gate it nearly doubled — which is an argument for the gate that comes next
+to be per-severity rather than on a total.
 
-| reference | was | now |
-| --- | --- | --- |
-| `postgres` | `16.3-alpine` | `16.15-alpine` |
-| `apache/airflow` | `2.9.2-python3.11` | `2.11.2-python3.11` |
-| `apache/spark` | `3.5.1-python3` | `3.5.9-python3` |
-| `minio/minio` | `RELEASE.2024-06-04` | `RELEASE.2025-09-07` |
-| `ghcr.io/mlflow/mlflow` | `v2.13.0` | `v2.22.4` |
-| `mlops-platform/mlflow` | `2.13.0` | `2.22.4` |
+**`apache/airflow` doubled its package count and lowered its risk.** 586 packages to 1,215, findings 1,566
+to 1,193. Airflow 2.11 bundles far more providers than 2.9 and still carries less. A package count is not
+a risk measure, which is worth knowing next to six committed inventories whose whole purpose is to be
+counted.
 
-Crossing a major line is a migration rather than a bump, and each one is refused for a specific reason
-rather than out of caution: Postgres 17+ will not start against a `PGDATA` initialised by 16, Airflow 3
-replaces the webserver with an api-server and changes what `standalone` does, MLflow 3 changes tracking
-semantics, and Spark 4 is a decision about what Repo 1's M2 work targets. Record 021 has the table and
-the reasoning.
+**Nothing this repository installs contributes a finding, still.** `mlops-platform/mlflow` and its base
+return identical counts at every severity — 468, 18, 163 — and the inventory diff is `added: 5   removed:
+0`, exactly the five packages the Dockerfile installs. That held before the bump and after it.
 
-**The gate threshold is still unset, deliberately.** `SCAN_FAIL_ON` defaults to `high` and will fail;
-that is a known state, not a gate anyone claims to pass. Choosing a threshold before the bump would have
-meant picking a number to fit findings nobody had tried to fix. It gets chosen from the numbers the bump
-produces, which is what "gate on evidence" means here.
+`urllib3` is still High, in both `apache/airflow` and the MLflow base, which record 021 predicted would be
+fixed and was not. Pinning it forward here is now a real option: it would be this repository's first
+deliberate override of a base image's own dependency resolution, so it gets its own record rather than a
+line in an existing one.
 
-**One more thing about the inventories, which is a gap rather than a feature.** Record 019's argument for
-committing an inventory is that a version bump produces a readable diff. The bump above is the first
-since that mechanism landed, and **no inventory has ever been committed** — they are written on the
-machine with a daemon and have never travelled back, so the property the format exists for has not once
-been exercised. Getting the post-bump inventories committed is what turns that mechanism from a claim
-into a working loop.
+**The inventories are committed as of this milestone**, and that is what makes the table above checkable
+rather than quoted. Record 019's argument for committing them is that a bump produces a readable diff, and
+until now none had ever travelled back from the machine that writes them, so the property had never been
+exercised. The six in `sbom/` are the baseline; the next bump diffs against them.
 
-Syft also catalogues each image as a package inside its own inventory and points the SPDX `DESCRIBES`
-relationship at it, so `mlops-platform/mlflow==2.13.0` was a line in `mlops-platform/mlflow`'s own
-inventory and diffing it against its base produced a spurious added line and a spurious removed line.
-`supply.inventory` now drops whatever the document declares itself to be about, read from the document's
-structure rather than by matching the image's name — a name match would work today and silently drop a
-real package the day one is named after an image. It fired on all six images, one entry each, which is
-why the package counts above are one lower than the raw catalogue.
+**The threshold is still unset, and the cheap lever is now spent.** 3,372 findings and 138 Critical is what
+current-within-major looks like. The remaining levers are crossing major lines — Airflow 3, Spark 4,
+Postgres 18, MLflow 3, each a migration with its own failure modes — or accepting the residue and gating
+against regression. Record 021 anticipated the second: a ratchet "remains a good candidate for the
+threshold *after* the bump, when what remains really is the residue". It is now the residue.
 
 **Two things are still not done, and a green suite hides neither.**
 
 1. **`security/exceptions.toml` is empty and not wired into the scanner.** The half that runs today is
    the half that rots: every entry needs a reason of at least forty characters and an unquoted expiry
-   date, and an expired entry fails the *suite*, on any machine, with no daemon. Converting an accepted
-   finding into a scanner ignore rule is the other half. After record 021 it is also less urgent than it
-   looked: the answer to a thousand findings was never going to be a thousand exceptions.
-2. **CI does not scan.** It needs the threshold, and the threshold needs the post-bump numbers.
+   date, and an expired entry fails the *suite*, on any machine, with no daemon. After record 021 this is
+   less urgent than it looked — the answer to a thousand findings was never a thousand exceptions.
+2. **CI does not scan.** It needs the threshold, and the threshold is the next decision.
 
-**What M1 still owes:** a re-scan proving the bump did what record 021 predicts, a threshold chosen from
-it, the inventories committed, and the images in GHCR at their digests. The last needs a credential and a
-decision about publishing, so it is not merely unrun work.
+**What M1 still owes:** a threshold chosen from the numbers above, and the images in GHCR at their
+digests. The second needs a credential and a decision about publishing, so it is not merely unrun work.
 
 ## 8. Troubleshooting by symptom
 

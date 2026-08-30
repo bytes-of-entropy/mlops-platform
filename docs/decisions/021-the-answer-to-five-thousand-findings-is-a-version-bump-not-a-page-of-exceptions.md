@@ -154,3 +154,88 @@ and have never travelled back, so the property the format exists for has not onc
 diff that would have made this record's case in five lines does not exist. Getting the post-bump
 inventories committed is what turns that mechanism from a claim into a working loop, and it is owed
 before the next bump rather than after it.
+
+## Prediction scored, 2026-08-30
+
+Two of six correct. The two that were right were the two about *this repository*; the four that were
+wrong were all about how an upstream base image would behave, which is a distinction worth keeping.
+
+| | before | after | change |
+| --- | --- | --- | --- |
+| findings | 5,017 | 3,372 | −33% |
+| Critical | 185 | 138 | −25% |
+| High | 1,197 | 870 | −27% |
+| unique advisory ids | 1,390 | 1,054 | −24% |
+| with a fixed version | 4,121 | 2,121 | |
+
+| image | findings | Critical | High |
+| --- | --- | --- | --- |
+| `apache/airflow` 2.9.2 → 2.11.2 | 1,566 → 1,193 | 88 → 68 | 481 → 320 |
+| `apache/spark` 3.5.1 → 3.5.9 | 1,750 → 952 | 5 → **9** | 93 → **121** |
+| `ghcr.io/mlflow/mlflow` v2.13.0 → v2.22.4 | 603 → 468 | 27 → 18 | 212 → 163 |
+| `mlops-platform/mlflow` | 603 → 468 | 27 → 18 | 212 → 163 |
+| `minio/minio` 2024-06-04 → 2025-09-07 | 260 → 222 | 27 → 24 | 77 → 66 |
+| `postgres` 16.3 → 16.15 | 235 → **69** | 11 → **1** | 122 → **37** |
+
+**Prediction 1 — the tier stays green, `226 passed, 0 skipped`. REFUTED.** `225 passed, 1 failed`. The
+collection count was right and one test failed, so the arithmetic held and the claim did not.
+
+The failure was not a functional regression, and the reasoning I gave for the prediction is where the
+interest is. I argued the tier would survive because the smoke DAG "talks to MLflow over
+`/api/2.0/mlflow` rather than importing the client, so no MLflow Python API change reaches it." That is
+true of the DAG and I stopped there. `tests/test_artifact_store.py` runs a Python snippet *inside the
+MLflow container* that does import the client, and MLflow 2.22 prints a "View run at …" banner on run
+exit that 2.13 did not. The test parsed the whole of stdout as one JSON document and failed at
+character 0 — on a round trip that had succeeded, with the right body sitting in the string in the
+traceback. So the prediction's reasoning covered one of two MLflow consumers and I checked the one I
+had already been thinking about.
+
+The defect is the test's, not the bump's: parsing another program's stdout as if you own all of it
+asserts something about its console output that nobody promised. Both snippets now fence their payload,
+`test_m0_smoke.py`'s latent copy of the same assumption is fixed, and the reader is unit-tested against
+the exact string the build machine produced.
+
+**Prediction 2 — total findings fall by more than half, to under 2,500. REFUTED.** 5,017 → 3,372, a
+fall of 33%. Direction right, magnitude wrong by a wide margin.
+
+**Prediction 3 — Critical falls furthest in proportion, to under 40. REFUTED**, and it was the one I
+said I would defend least, which is at least consistent. Critical fell 25% against the total's 33%, so
+it was the *least* responsive severity rather than the most. The stated reason — "Critical findings in
+OS packages get backported fastest" — is simply wrong as a generalisation about what a version bump
+reaches.
+
+**Prediction 4 — `apache/airflow` remains the worst image by absolute count. CORRECT.** 1,193, still
+the worst by 241.
+
+**Prediction 5 — the five packages this repository installs still contribute zero findings, so the
+built image and its base still return identical counts. CORRECT.** 468 findings each, 18 Critical
+each, 163 High each, and zero findings in `boto3`, `botocore`, `jmespath`, `psycopg2-binary` or
+`s3transfer`. The inventory diff is `added: 5   removed: 0`, exactly the five the Dockerfile installs.
+
+**Prediction 6 — `urllib3` is no longer High in the new base. REFUTED.** Ten High rows remain across
+`apache/airflow` and the MLflow base. As the prediction said, this is the interesting way to be wrong:
+owning the pin here is now a real option rather than a speculative one, and it would be this
+repository's first deliberate override of a base image's own dependency resolution. That deserves its
+own record rather than a line in this one.
+
+## Two results no prediction covered
+
+**`apache/spark` got safer and more severe at the same time.** Total findings fell 46%, from 1,750 to
+952, while Critical rose from 5 to 9 and High from 93 to 121. A bump is not monotonic per severity, and
+any threshold set from a total would have read this image as improving while the count of findings that
+would actually gate it nearly doubled. That is an argument for whatever gate comes next to be
+per-severity rather than on a total.
+
+**`apache/airflow` doubled its package count and lowered its risk.** 586 packages to 1,215, findings
+1,566 to 1,193. Airflow 2.11 bundles far more providers than 2.9 and still carries less. A package
+count is not a risk measure, which is worth having in writing next to an inventory whose whole purpose
+is to be counted.
+
+## What this leaves
+
+The cheap lever is spent. 3,372 findings and 138 Critical is what current-within-major looks like, so
+the remaining levers are crossing major lines — Airflow 3, Spark 4, Postgres 18, MLflow 3 — or accepting
+the residue and gating against regression. Record 021's own text already anticipated the second: a
+ratchet "remains a good candidate for the threshold *after* the bump, when what remains really is the
+residue." It is now the residue. Which of the two, and at what granularity given the Spark result above,
+is the next decision and it has evidence behind it for the first time.
