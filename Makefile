@@ -23,13 +23,18 @@ WAIT_TIMEOUT := 300
 
 # Two cataloguers, run as containers so a reviewer installs nothing to reproduce a scan, and pinned
 # by tag with their digests owed exactly as the spine's were before record 018 closed that gap.
+#
+# `?=`, not `:=`: the committed value is the default and the environment can override it, which is
+# what makes an exploratory scan possible without editing a tracked file. `SCAN_FAIL_ON=none` is the
+# one that matters -- the first scan of an image nobody has scanned wants the whole finding table,
+# not a gate that stops at the first High. A mirror test asserts make.ps1 honours the same four.
 # Both write into $(SBOM_DIR) through a bind mount rather than through a shell redirect: the
 # Windows mirror cannot redirect a JSON stream without deciding an encoding for it, and the two
 # entrypoints producing byte-different documents from the same image would defeat the point.
-SYFT         := anchore/syft:v1.9.0
-GRYPE        := anchore/grype:v0.79.0
-SBOM_DIR     := sbom
-SCAN_FAIL_ON := high
+SYFT         ?= anchore/syft:v1.9.0
+GRYPE        ?= anchore/grype:v0.79.0
+SBOM_DIR     ?= sbom
+SCAN_FAIL_ON ?= high
 
 .PHONY: help setup test lint fmt hooks check doctor build sbom scan up up-quickstart down clean reset ps logs config
 
@@ -125,11 +130,12 @@ sbom:
 scan:
 	@ls $(SBOM_DIR)/*.spdx.json >/dev/null 2>&1 || \
 	  { echo "no SBOMs in $(SBOM_DIR); run 'make sbom' first"; exit 1; }
-	@for document in $(SBOM_DIR)/*.spdx.json; do \
+	@gate="--fail-on $(SCAN_FAIL_ON)"; \
+	if [ "$(SCAN_FAIL_ON)" = "none" ]; then gate=""; fi; \
+	for document in $(SBOM_DIR)/*.spdx.json; do \
 	  echo "scanning $$document"; \
 	  docker run --rm -v "$$PWD/$(SBOM_DIR):/sbom" \
-	    $(GRYPE) "sbom:/sbom/$$(basename $$document)" \
-	    --fail-on $(SCAN_FAIL_ON) || exit 1; \
+	    $(GRYPE) "sbom:/sbom/$$(basename $$document)" $$gate || exit 1; \
 	done
 
 up: doctor

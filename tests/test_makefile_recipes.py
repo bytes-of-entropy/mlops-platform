@@ -28,9 +28,11 @@ from tests.conftest import REPO_ROOT
 
 MAKEFILE = REPO_ROOT / "Makefile"
 
-#: `NAME := value`, the only assignment form this Makefile uses. Recursive `=` would need a real
-#: expander; a test asserts none appears, so this stays a substitution rather than an interpreter.
-ASSIGNMENT = re.compile(r"^(?P<name>[A-Z_][A-Z0-9_]*)\s*:=\s*(?P<value>.*)$", re.MULTILINE)
+#: `NAME := value` and `NAME ?= value`, the two assignment forms this Makefile uses. Recursive `=`
+#: would need a real expander; a test asserts none appears, so this stays a substitution rather than
+#: an interpreter. A `?=` default is substituted as written, which is what a run with no environment
+#: override would see, and is the case worth checking.
+ASSIGNMENT = re.compile(r"^(?P<name>[A-Z_][A-Z0-9_]*)\s*[:?]=\s*(?P<value>.*)$", re.MULTILINE)
 
 #: A target line: a name, a colon, and optional prerequisites. Excludes `.PHONY` and pattern rules.
 TARGET = re.compile(r"^(?P<name>[a-z][a-z0-9-]*):(?!=)")

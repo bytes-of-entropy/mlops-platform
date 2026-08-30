@@ -383,22 +383,27 @@ otherwise.
 | `pre-commit run --all-files` | 8 lines, each `Passed`; no summary line |
 | `pytest`, no runtime | `194 passed, 14 skipped` |
 | `pytest`, runtime but no credentials | `199 passed, 9 skipped`, derived rather than measured |
-| `pytest`, runtime and credentials | `208 passed, 0 skipped`, derived. `140 passed, 0 skipped` was measured on the build machine on 2026-08-30 and matched the row derived for it exactly; 68 assertions have landed since, so this row is again a derivation awaiting its measurement. One of the 68 is a placeholder that becomes a real check rather than a new one: `test_an_inventory_is_sorted_and_shaped_for_review` is parameterised over the committed inventories and skips while there are none, so the first `make sbom` turns that skip into five checks |
+| `pytest`, runtime and credentials, before `make sbom` | `207 passed, 1 skipped`, derived. `140 passed, 0 skipped` was measured on the build machine on 2026-08-30 and matched the row derived for it exactly; 68 assertions have landed since, so this row is again a derivation awaiting its measurement |
+| `pytest`, runtime and credentials, after `make sbom` | `212 passed, 0 skipped`, derived. A runtime clears thirteen of the fourteen skips; the fourteenth is an empty parameter set and only an inventory clears it. `test_an_inventory_is_sorted_and_shaped_for_review` is parameterised over the files in `sbom/`, so five inventories turn one skip into five checks, which is where the extra four in the total come from |
 | `docker images mlops-platform/mlflow` | one row, tag `2.13.0`, after `build` |
 | `make doctor` | three checks (`container runtime`, `credentials`, `postgres volume`), each `OK`, except that the volume check reports it cannot verify a volume created before the fingerprint existed |
 
-The first and last `pytest` rows are measured; the middle one is derived from which guard each test
-carries, because the authoring machine cannot produce it. If a run disagrees with the row it should be on,
-**that disagreement is the finding**. Record it before fixing it. The last row was derived before it was
-measured and the measurement matched it exactly, which is the only reason the derivation is worth trusting
-for the row that still has none.
+Only the first `pytest` row is measured. The other three are derived from which guard each test carries,
+because the authoring machine has no container runtime and cannot produce any of them. If a run disagrees
+with the row it should be on, **that disagreement is the finding**. Record it before fixing it.
+
+The derivations are worth something rather than nothing for one reason: the last time this table carried a
+derived zero-skip row, the build machine measured `140 passed, 0 skipped` and the derivation had said
+exactly that. One match is not a track record, so the three rows below the first stay labelled derived
+until each has been run.
 
 The fourteen skips divide as five image-resolution checks, one per registry reference: the four tags
 the spine pulls plus the base the one built image comes from (they ask a registry whether each still
 resolves, which needs a docker client); two artifact-store checks; three idempotency tests; three that
 run the smoke DAG; and one empty parameter set, because the committed-inventory check is parameterised
-over the files in `sbom/` and there are none yet. The last six need credentials as well as a runtime,
-which is why the middle row drops six rather than three. The empty-set skip is the only one a container
+over the files in `sbom/` and there are none yet. Eight of them need credentials as well as a runtime -- the
+two artifact-store checks reach into MinIO and the six DAG and idempotency tests start real stacks --
+which is why the middle row clears five rather than thirteen. The empty-set skip is the only one a container
 runtime does not clear: it clears on the first `make sbom`, and until then it is the suite saying
 plainly that the artefact it would check does not exist.
 
@@ -462,7 +467,26 @@ exhaustive by construction: five references come back, one of them the image bui
 one whose contents are a decision made in this repository and so the one least defensible to omit.
 
 `make scan` reads those SPDX documents rather than the images, so what is scanned is what was inventoried
-and a finding can be traced to a committed line. It fails on `high` or above; `SCAN_FAIL_ON` overrides that.
+and a finding can be traced to a committed line. It fails on `high` or above.
+
+All four supply settings take a value from the environment — `SYFT`, `GRYPE`, `SBOM_DIR`, `SCAN_FAIL_ON` —
+and the one that earns its keep is `SCAN_FAIL_ON=none`, which reports every finding and gates on nothing.
+That is what a first scan wants: an image nobody has scanned yet should produce a whole finding table rather
+than stopping at the first High, and getting there should not require editing a tracked file. `none` is this
+repository's spelling, not grype's; grype omits the flag, and both entrypoints translate.
+
+```powershell
+$env:SCAN_FAIL_ON = 'none'; .\make.ps1 scan   # report everything, fail on nothing
+Remove-Item Env:\SCAN_FAIL_ON                  # back to gating on high
+```
+
+```bash
+SCAN_FAIL_ON=none make scan
+```
+
+A mirror test asserts both entrypoints honour all four and spell the report-only case the same way, because
+an override that works on Linux and silently does nothing on Windows is worse than no override: the person
+who needed it edits the file instead, and what they ran is not what is committed.
 
 Both targets run their tool as a container — `anchore/syft:v1.9.0` and `anchore/grype:v0.79.0` — so
 reproducing a scan installs nothing on the host. Both pins live in the two entrypoints rather than in

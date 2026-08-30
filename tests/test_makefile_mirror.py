@@ -167,7 +167,7 @@ def test_both_entrypoints_run_the_doctor_before_starting_the_stack() -> None:
 #: both runs succeed, both write an inventory, and only one of them is the one in the diff.
 CATALOGUER_PINS = {
     "Makefile": re.compile(
-        r"^(?P<name>SYFT|GRYPE|SBOM_DIR|SCAN_FAIL_ON)\s*:=\s*(?P<value>\S+)$", re.MULTILINE
+        r"^(?P<name>SYFT|GRYPE|SBOM_DIR|SCAN_FAIL_ON)\s*\?=\s*(?P<value>\S+)$", re.MULTILINE
     ),
     "make.ps1": re.compile(
         r"^\$(?P<name>Syft|Grype|SbomDir|ScanFailOn)\s*=\s*'(?P<value>[^']+)'$", re.MULTILINE
@@ -250,4 +250,42 @@ def test_the_scan_reads_the_sbom_rather_than_the_image() -> None:
         assert body, f"{name} has no scan target for this test to look inside"
         assert "sbom:/sbom/" in body.group(0), (
             f"{name}'s scan does not point the scanner at a generated SBOM"
+        )
+
+
+#: An environment override, in each entrypoint's own syntax.
+MAKE_OVERRIDABLE = re.compile(r"^(?P<name>SYFT|GRYPE|SBOM_DIR|SCAN_FAIL_ON)\s*\?=", re.MULTILINE)
+PS_OVERRIDABLE = re.compile(
+    r"^if \(\$env:(?P<name>SYFT|GRYPE|SBOM_DIR|SCAN_FAIL_ON)\)\s*\{", re.MULTILINE
+)
+
+
+def test_both_entrypoints_take_the_same_four_settings_from_the_environment() -> None:
+    """An exploratory scan needs `SCAN_FAIL_ON=none`, and needing it on one platform only is a trap.
+
+    The first scan of an image nobody has scanned wants the whole finding table rather than a gate
+    that stops at the first High. If that is reachable from the Makefile and not from make.ps1, the
+    person on Windows edits a tracked file to get it and the override is not what they used.
+    """
+    expected = {"SYFT", "GRYPE", "SBOM_DIR", "SCAN_FAIL_ON"}
+    makefile = set(MAKE_OVERRIDABLE.findall((REPO_ROOT / "Makefile").read_text(encoding="utf-8")))
+    powershell = set(PS_OVERRIDABLE.findall((REPO_ROOT / "make.ps1").read_text(encoding="utf-8")))
+    assert makefile == expected, f"the Makefile pins these with `:=`: {sorted(expected - makefile)}"
+    assert powershell == expected, f"make.ps1 ignores: {sorted(expected - powershell)}"
+
+
+def test_both_entrypoints_spell_a_report_only_scan_the_same_way() -> None:
+    """`--fail-on none` is not a grype value; a report-only run omits the flag.
+
+    So both files need the same escape hatch, and it has to be the same word in both, or the one
+    documented in `docs/setup.md` works on one platform and is a no-op on the other.
+    """
+    for name in ("Makefile", "make.ps1"):
+        text = (REPO_ROOT / name).read_text(encoding="utf-8")
+        body = re.search(
+            r"^(?:scan:|    'scan' \{).*?(?=^(?:\S|    \}))", text, re.MULTILINE | re.DOTALL
+        )
+        assert body, f"{name} has no scan target"
+        assert "none" in body.group(0), (
+            f"{name}'s scan has no report-only path, so an exploratory scan needs a file edit"
         )

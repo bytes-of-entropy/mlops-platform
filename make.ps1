@@ -26,6 +26,12 @@ $Syft = 'anchore/syft:v1.9.0'
 $Grype = 'anchore/grype:v0.79.0'
 $SbomDir = 'sbom'
 $ScanFailOn = 'high'
+# Mirrors the Makefile's `?=`. Kept as four separate overrides after the defaults rather than folded
+# into them, so the line a reader looks at to learn the pinned version is still a plain assignment.
+if ($env:SYFT) { $Syft = $env:SYFT }
+if ($env:GRYPE) { $Grype = $env:GRYPE }
+if ($env:SBOM_DIR) { $SbomDir = $env:SBOM_DIR }
+if ($env:SCAN_FAIL_ON) { $ScanFailOn = $env:SCAN_FAIL_ON }
 
 function Invoke-Checked {
     param([string]$Exe, [string[]]$Arguments)
@@ -117,10 +123,13 @@ switch ($Target) {
         if (-not $documents) { throw "no SBOMs in $SbomDir; run './make.ps1 sbom' first" }
         foreach ($document in $documents) {
             Write-Output "scanning $($document.Name)"
-            Invoke-Checked 'docker' @(
+            # 'none' means report and do not gate, which grype spells by omitting the flag
+            # rather than by a value. The first scan of an unscanned image wants the whole table.
+            $gate = if ($ScanFailOn -eq 'none') { @() } else { @('--fail-on', $ScanFailOn) }
+            Invoke-Checked 'docker' (@(
                 'run', '--rm', '-v', "${mount}:/sbom",
-                $Grype, "sbom:/sbom/$($document.Name)", '--fail-on', $ScanFailOn
-            )
+                $Grype, "sbom:/sbom/$($document.Name)"
+            ) + $gate)
         }
     }
     'up' {
