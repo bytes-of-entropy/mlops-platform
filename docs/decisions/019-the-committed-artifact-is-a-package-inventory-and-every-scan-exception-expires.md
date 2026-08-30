@@ -204,3 +204,72 @@ two years stale, because I chose those versions from memory rather than from a r
 in the repository could have caught it: every assertion about these references checked that the pin
 was *exact*, and exactness has nothing to do with currency. That gap is what record 020's expiry is
 for.
+
+## Prediction scored, 2026-08-30 (third run, the first with findings)
+
+The scan ran. `grype db update` fetched schema v6.1.9, built 2026-08-30T06:27:52Z, `Status: valid`,
+and all six documents were scanned in 97 seconds including the download.
+
+**5,017 findings, 1,390 unique advisory identifiers.** Counted from the pasted output by column
+offset; two further rows were split by terminal wrapping and are not in the totals.
+
+| severity | findings | unique ids | a fixed version exists |
+| --- | --- | --- | --- |
+| Critical | 185 | 70 | 154 |
+| High | 1,197 | 485 | 1,086 |
+| Medium | 2,541 | 718 | 2,288 |
+| Low | 552 | 201 | 512 |
+| Negligible | 453 | 91 | 80 |
+| Unknown | 89 | 10 | 1 |
+| **total** | **5,017** | **1,390** | **4,121** |
+
+| image | findings | Critical | High | of Critical+High, fixable |
+| --- | --- | --- | --- | --- |
+| `apache/spark:3.5.1-python3` | 1,750 | 5 | 93 | 95 of 98 |
+| `apache/airflow:2.9.2-python3.11` | 1,566 | 88 | 481 | 499 of 569 |
+| `mlops-platform/mlflow:2.13.0` | 603 | 27 | 212 | 208 of 239 |
+| `ghcr.io/mlflow/mlflow:v2.13.0` | 603 | 27 | 212 | 208 of 239 |
+| `minio/minio` | 260 | 27 | 77 | 98 of 104 |
+| `postgres:16.3-alpine` | 235 | 11 | 122 | 132 of 133 |
+
+**Prediction 1 — at least one High or Critical, and in a base image rather than in anything this
+repository installs. CORRECT**, by a margin that makes "at least one" read as an understatement. The
+severity is concentrated in OS packages: of the 1,382 Critical and High findings, 731 are `deb`, 229
+`python`, 181 `go-module`, 39 `apk`. The stated reasoning also holds — `apache/spark` carries the JVM
+and Hadoop surface and `apache/airflow` the large Python one, and neither is rebuilt here.
+
+**Prediction 2 — nothing this repository installs is the source of a High or Critical. CORRECT**, and
+the evidence is stronger than the prediction asked for. `mlops-platform/mlflow` and its base
+`ghcr.io/mlflow/mlflow` return *identical* counts: 603 findings each, 27 Critical each, 212 High each.
+The five packages this repository adds — `boto3`, `botocore`, `jmespath`, `psycopg2-binary`,
+`s3transfer` — contribute exactly zero findings at any severity. Nothing about the vulnerability
+profile of the one image built here is attributable to a decision made here.
+
+One near-miss worth naming rather than leaving to be found: `urllib3==2.2.1` carries High findings and
+sits in both the base and the built image. It is a dependency of `boto3`, so it looks like this
+repository's problem and is not — record 020's step-6 diff established that `urllib3` was already in
+the base, which is why `pip` left it alone. It could be pinned forward here, which would be a change
+this repository *chooses* to own rather than one it already owns.
+
+**Prediction 3 — the mlflow inventory exceeds its base's by the two packages installed plus their
+transitive dependencies, under twenty. CORRECT** at five, scored in full under record 020.
+
+**Prediction 4 — at least one exception will be needed to make the scan pass at first. CORRECT**, and
+this is the prediction whose being right matters least and whose margin matters most. `--fail-on high`
+meets 1,382 findings. Making that gate pass by exception would take on the order of a thousand
+entries, each needing a forty-character reason and an expiry date.
+
+## What would change my mind: triggered
+
+This record wrote down the condition and it has been met:
+
+> If the number of exceptions needed to get a clean scan is large — more than a handful — then the
+> base images are the problem rather than the findings, and the right answer is to reconsider
+> `apache/spark:3.5.1-python3` rather than to write a page of accepted CVEs.
+
+1,382 is not a handful. The exceptions mechanism is not the answer here and will not be used to make
+this gate pass. Roughly 90% of the Critical and High findings name a fixed version, and the images are
+old — `apache/airflow:2.9.2-python3.11` and `postgres:16.3-alpine` are mid-2024 — so the fix is
+overwhelmingly a version bump rather than an accepted risk. What threshold to gate at, and which bases
+to move, is a decision for its own record; this one records only that the mechanism it built is the
+wrong tool for the number it found, which is what the trigger was for.

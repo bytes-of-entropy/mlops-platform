@@ -252,3 +252,42 @@ cannot drift from them.
 **The suite matched its derived row exactly for the second consecutive time**: `220 passed, 0 skipped`
 after `make sbom`, derived on a machine with no container runtime. The `pytest` rows in
 `docs/setup.md` are worth more than they were two runs ago.
+
+## Prediction scored, 2026-08-30 (third run)
+
+**Prediction 1 — v0.118.0 loads a database and the scan completes on all six documents.** Scored
+REFUTED above, for the run where my own precondition prevented it. With `db update` in front of
+`db status` the same pin did exactly what the prediction said: `Schema: v6.1.9`, `Built:
+2026-08-30T06:27:52Z`, `Status: valid`, six documents scanned. The refuted score stands, because the
+prediction was about a run and that run failed; the claim underneath it was sound.
+
+**Prediction 2 — at least one High or Critical. CORRECT.** 185 Critical and 1,197 High. Scored in full
+under record 019.
+
+**Prediction 3 — syft finds more packages in at least four of five images.** Scored REFUTED above, at
+three of five. Unchanged.
+
+**Prediction 4 — the mlflow inventory exceeds its base's by fewer than ten lines. CORRECT** at five,
+and now cleanly: with the document-subject entry dropped, the diff reads `added: 5   removed: 0`
+rather than the earlier `added: 6   removed: 1`.
+
+**Prediction 5 — the cache turns five downloads into one, and the wall clock drops by more than half.
+HALF SCORED, and the half that is measured is not the half that was claimed.** One fetch happened
+across six documents, and the next invocation fetched nothing at all — the cache works, and "five
+downloads become one" is confirmed. The wall-clock claim is not: there is no uncached baseline to
+compare against, because the uncached configuration never completed a scan. 97 seconds for six
+documents including the download is the only number, and it is not evidence for a halving. Recorded as
+unmeasured rather than quietly counted as correct, since CLAUDE.md requires before and after numbers
+for a change justified by speed and this has only an after.
+
+## Two mechanisms confirmed working
+
+**The document-subject drop fired on all six images**, one entry each, exactly as the structural read
+predicted. Every inventory is one line shorter and step 6's diff is now five lines with no spurious
+pair. Reporting the count rather than asserting it was the right call: it turned an assumption into an
+observation at no cost.
+
+**Both cataloguer tags still point at their pinned digests.** `AGREE` twice, which retroactively
+validates resolving those digests from Docker Hub's API rather than from the build machine's image
+store — the method used for `apache/airflow` in record 018 and flagged then as worth watching. It has
+now been checked twice and been right twice.
