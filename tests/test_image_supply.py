@@ -25,6 +25,7 @@ the stack starting at all.
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 from typing import Any
@@ -42,6 +43,9 @@ from tests.conftest import COMPOSE_FILE, REPO_ROOT, describe_process, requires_d
 ARCHIVED_NAMESPACES = ("bitnami/", "bitnamilegacy/")
 
 MANIFEST_TIMEOUT_SECONDS = 60
+
+#: A reference pinned the way record 018 requires: a tag a reader recognises, then the bytes.
+DIGEST_PINNED = re.compile(r"^[^\s@]+:[^\s@:]+@sha256:[0-9a-f]{64}$")
 
 
 def _services() -> dict[str, dict[str, Any]]:
@@ -164,3 +168,75 @@ def test_every_pinned_image_still_resolves(reference: str) -> None:
                 },
             )
         )
+
+
+# --------------------------------------------------------------------------------------------------
+# Record 018: the pins themselves, which need no registry and so run everywhere.
+# --------------------------------------------------------------------------------------------------
+
+
+def test_every_pulled_reference_is_pinned_by_digest() -> None:
+    """A tag its publisher can move is a pointer; the digest is the bytes.
+
+    Record 012 probes that these references resolve. That proves they exist today and says nothing
+    about their resolving to the same image tomorrow, which is what this asserts.
+    """
+    unpinned = [image for image in pulled_images() if not DIGEST_PINNED.match(image)]
+    assert not unpinned, (
+        f"{unpinned} name a tag with no digest. A moved tag rebuilds a different platform than the "
+        f"one this suite passed on, with nothing in the repository changed to notice it."
+    )
+
+
+def test_every_built_base_is_pinned_by_digest() -> None:
+    """The supply-chain claim for a locally built image is made on its base, in its Dockerfile."""
+    unpinned = [base for base in built_bases() if not DIGEST_PINNED.match(base)]
+    assert not unpinned, f"{unpinned} are FROM lines naming a tag with no digest"
+
+
+def test_the_locally_built_reference_is_not_pinned_by_digest() -> None:
+    """The trap record 018 exists to name.
+
+    `docker image inspect` reports a RepoDigests entry for a locally built image, and pinning
+    the compose key to it looks like the same discipline while being its opposite. A local digest
+    is a fact about one image store, so it pins the spine to an artifact nobody else can get.
+    """
+    built = sorted(
+        {
+            str(service["image"])
+            for service in SERVICES.values()
+            if _build_context(service) is not None
+        }
+    )
+    assert built, "no service builds, so this assertion proves nothing"
+    pinned = [image for image in built if "@sha256:" in image]
+    assert not pinned, (
+        f"{pinned} are built here and pinned by digest. That digest is local rather than a "
+        f"registry fact, so it pins the spine to an image no other machine can pull."
+    )
+
+
+def test_a_pinned_reference_keeps_its_tag() -> None:
+    """A digest with no tag beside it is unreadable, so every version question needs a registry."""
+    for image in [*pulled_images(), *built_bases()]:
+        name, _, remainder = image.partition("@")
+        assert ":" in name, (
+            f"{image} carries a digest with no tag; the tag is the documentation and the digest is "
+            f"the constraint, and a reviewer needs both"
+        )
+        assert remainder.startswith("sha256:")
+
+
+def test_the_two_sets_between_them_cover_every_image_key() -> None:
+    """Guards the same hole record 012 guards: a reference in neither set is unconstrained.
+
+    Restated because these assertions read the same two functions, so a service whose `build` key
+    moved would silently leave both rules rather than breaking one.
+    """
+    keys = {str(service["image"]) for service in SERVICES.values()}
+    built = {
+        str(service["image"])
+        for service in SERVICES.values()
+        if _build_context(service) is not None
+    }
+    assert set(pulled_images()) | built == keys

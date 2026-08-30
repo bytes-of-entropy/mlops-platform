@@ -102,3 +102,34 @@ The image is one directive harder to misuse and the Dockerfile now has four prop
 regress silently. What it does not have is a digest, so the supply-chain claim is still the one record
 012 makes and no stronger; anyone reading this milestone as "images are pinned" would be reading ahead
 of the evidence, which is why the scope boundary is in the Decision rather than in a footnote.
+
+---
+
+## Prediction scored, 2026-08-30: non-root cost nothing, and prediction 3 failed as it said it would
+
+Built and run on the build machine, with the PATH fix so nothing skips.
+
+```
+docker run --rm --entrypoint sh mlops-platform/mlflow:2.13.0 -c "id"
+uid=10001(mlflow) gid=10001(mlflow) groups=10001(mlflow)
+```
+
+`make build` then `make check`: **135 passed, 0 skipped** in 359.86 s, which is M0's pass condition plus
+the seven tests added here.
+
+**Predictions 1 and 2 hold.** The tracking server reports healthy and the bucket provisioner completes,
+both as uid 10001, with no chown, no writable volume and no added capability. The reasoning was that
+this server writes to Postgres and to S3 rather than to local disk, so it should need nothing on a
+filesystem it does not already own, and that is what happened. There is no undocumented permission fix
+underneath the claim, which was the thing worth checking rather than asserting.
+
+**Prediction 3 failed, in the direction it predicted for itself.** It expected the static audit to find
+at least one thing wrong beyond the missing `USER`, at low confidence, and said plainly that a check
+written to confirm its author's expectation is a check that will pass. It found nothing else: the pip
+installs were already pinned and already used `--no-cache-dir`, and the `COPY` needed a `--chmod` that
+was added in the same commit as the check. So the audit's value is entirely prospective, and the
+prediction was right to be sceptical of itself.
+
+**Prediction 4 is settled by record 018.** Adding the digest pins changed no test in the suite except
+the ones written for them; the count went from 128 to 135 on the audit and then to 140 on the pins,
+with nothing else moving.

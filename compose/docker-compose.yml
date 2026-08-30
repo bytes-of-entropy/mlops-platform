@@ -19,7 +19,7 @@ x-spark-worker-env: &spark-worker-env
 
 services:
   spark-master:
-    image: apache/spark:3.5.1-python3
+    image: apache/spark:3.5.1-python3@sha256:b49e3b73ce385c1693cc3294ec4b5b3882e9fa9bd5fc599d4c79198abc49cc94
     # This image's entrypoint passes any non-Kubernetes command straight through, so the
     # standalone daemons are named explicitly. spark-class runs in the foreground, which is
     # what a container needs; sbin/start-master.sh daemonises and the container would exit.
@@ -59,7 +59,7 @@ services:
           memory: 1g
 
   spark-worker-1:
-    image: apache/spark:3.5.1-python3
+    image: apache/spark:3.5.1-python3@sha256:b49e3b73ce385c1693cc3294ec4b5b3882e9fa9bd5fc599d4c79198abc49cc94
     command:
       - /opt/spark/bin/spark-class
       - org.apache.spark.deploy.worker.Worker
@@ -82,7 +82,7 @@ services:
           memory: 7g
 
   spark-worker-2:
-    image: apache/spark:3.5.1-python3
+    image: apache/spark:3.5.1-python3@sha256:b49e3b73ce385c1693cc3294ec4b5b3882e9fa9bd5fc599d4c79198abc49cc94
     profiles: ["full"]
     command:
       - /opt/spark/bin/spark-class
@@ -106,7 +106,7 @@ services:
           memory: 7g
 
   minio:
-    image: minio/minio:RELEASE.2024-06-04T19-20-08Z
+    image: minio/minio:RELEASE.2024-06-04T19-20-08Z@sha256:c6b68f15862830b58d6d373cdc88dd9de93bbd30bfaa7a26f180bd284673cc7d
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}
@@ -172,7 +172,7 @@ services:
           memory: 256m
 
   postgres:
-    image: postgres:16.3-alpine
+    image: postgres:16.3-alpine@sha256:36ed71227ae36305d26382657c0b96cbaf298427b3f1eaeb10d77a6dea3eec41
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
@@ -241,7 +241,7 @@ services:
           memory: 1g
 
   airflow:
-    image: apache/airflow:2.9.2-python3.11
+    image: apache/airflow:2.9.2-python3.11@sha256:fcffeccf230a57bc37c40610c342b9ff8d422009e5c27b82baf814551b3528ec
     profiles: ["full"]
     command: standalone
     environment:

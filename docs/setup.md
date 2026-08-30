@@ -381,9 +381,9 @@ otherwise.
 | `ruff format --check .` | `49 files already formatted`, Python and Markdown; the formatter handles both |
 | `mypy` | `Success: no issues found in 25 source files` |
 | `pre-commit run --all-files` | 8 lines, each `Passed`; no summary line |
-| `pytest`, no runtime | `122 passed, 13 skipped` |
-| `pytest`, runtime but no credentials | `127 passed, 8 skipped`, derived rather than measured |
-| `pytest`, runtime and credentials | `135 passed, 0 skipped`. `128 passed, 0 skipped` was measured on the build machine on 2026-08-27 and was the M0 pass condition; seven image-contract tests have landed since, so this row is derived from a measurement rather than being one |
+| `pytest`, no runtime | `127 passed, 13 skipped` |
+| `pytest`, runtime but no credentials | `132 passed, 8 skipped`, derived rather than measured |
+| `pytest`, runtime and credentials | `140 passed, 0 skipped`. `135 passed, 0 skipped` was measured on the build machine on 2026-08-30, with the image-contract tests in; five digest assertions have landed since, so this row is derived from a measurement rather than being one |
 | `docker images mlops-platform/mlflow` | one row, tag `2.13.0`, after `build` |
 | `make doctor` | three checks (`container runtime`, `credentials`, `postgres volume`), each `OK`, except that the volume check reports it cannot verify a volume created before the fingerprint existed |
 
@@ -418,24 +418,31 @@ not root and is an account the image creates, no base names a moving tag, every 
 `==` and leaves no wheel cache, and a copied script is not writable by the user that executes it.
 Record 017 argues each, and records why this image is not rebuilt multi-stage from a slim base.
 
-**Digest pinning is the one hardening item still outstanding, and it needs a machine with a registry.**
-Every `image` key and every `FROM` currently names a tag. A tag is a pointer and a digest is the bytes,
-and record 012 already makes the weaker claim that the tags resolve. Resolving the digests takes one
-command on a host that has pulled them:
+**Digest pinning is done, and one reference is deliberately exempt.** Every pulled `image` key and
+every `FROM` now carries both a tag and a digest, as `name:tag@sha256:...`: the tag because it is what a
+reader recognises and what a version bump edits, the digest because it is what the build resolves.
+`mlops-platform/mlflow:2.13.0` stays a bare tag, because it is built here and a local digest is a fact
+about one machine's image store rather than a registry fact — pinning it would tie the spine to an
+artifact nobody else can pull, which is precisely the mistake record 012's title names. Five assertions
+enforce all of that with no daemon, reusing record 012's own pulled-versus-built split so a service
+gaining a `build` key moves between the rules rather than escaping both. Record 018 argues it.
+
+Re-resolving the digests, when a version is bumped, takes one command on a host that has pulled them:
 
 ```powershell
-docker compose --project-directory . -f compose/docker-compose.yml config --images |
+Select-String -Path compose/*.yml -Pattern 'image:\s*(\S+)' |
+  ForEach-Object { $_.Matches[0].Groups[1].Value } | Sort-Object -Unique |
   ForEach-Object { "$_  $(docker image inspect --format '{{index .RepoDigests 0}}' $_)" }
 ```
 
-The output is pasted into the `FROM` lines and the compose `image` keys as `name:tag@sha256:...`, and
-the test that *requires* a digest lands in the same commit as the digests. It is deliberately not in the
-suite yet: a test that accepted a bare tag in the meantime would be a gate that passes without looking,
-which is the failure mode this repository has already had once with `lint-imports`.
+Use that rather than `config --images`, which reports only the default profile and silently omitted
+`apache/airflow` the first time.
 
-**What M1 still owes after that:** an SBOM, a vulnerability scan with any exceptions documented, and the
-images in GHCR at those digests. All three need a daemon, a network, and in the last case a credential,
-so all three are build-machine work rather than authoring work.
+**What M1 still owes:** an SBOM, a vulnerability scan with any exceptions documented, and the images in
+GHCR at those digests. All three need a daemon, a network, and in the last case a credential, so all
+three are build-machine work rather than authoring work. Note what pinning did and did not buy: the
+images are now *identical* everywhere, not trustworthy. A pinned digest of a vulnerable image is a
+reliably vulnerable image, and the scan is what would say so.
 
 ## 8. Troubleshooting by symptom
 
