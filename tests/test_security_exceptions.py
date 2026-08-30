@@ -1,4 +1,7 @@
-"""The accepted-vulnerability list, and the package inventories, checked without a daemon.
+"""The accepted-vulnerability list, the package inventories, and the advisory baselines.
+
+All of it checkable with no daemon, which is the point: these are the committed artefacts of a
+process that needs one, so the machine that reviews them is never the machine that produced them.
 
 The scan itself needs Docker and a network. Two things about it do not, and they are the two that
 rot: whether an accepted finding is still in date, and whether a committed inventory is the shape a
@@ -17,6 +20,9 @@ from datetime import date
 from pathlib import Path
 
 import pytest
+
+from supply.findings import ADVISORY
+from supply.findings import baseline as supply_baseline
 
 ROOT = Path(__file__).resolve().parent.parent
 EXCEPTIONS_FILE = ROOT / "security" / "exceptions.toml"
@@ -126,6 +132,71 @@ def test_an_inventory_is_sorted_and_shaped_for_review(path: Path) -> None:
     assert len(lines) == len(set(lines)), f"{path.name} lists a package twice"
     malformed = [line for line in lines if line.count("==") != 1]
     assert not malformed, f"{path.name} has lines that are not name==version: {malformed[:3]}"
+
+
+def baselines() -> list[Path]:
+    """Committed advisory baselines, if any have been written yet."""
+    return sorted(SBOM_DIR.glob("*.known.txt")) if SBOM_DIR.is_dir() else []
+
+
+@pytest.mark.parametrize("path", baselines(), ids=lambda p: p.name)
+def test_a_baseline_is_readable_and_says_what_it_is_not(path: Path) -> None:
+    """Two claims about a committed baseline, both checkable with no daemon.
+
+    That it parses, because `supply.findings` refuses a line matching no finding and a baseline that
+    cannot be read is a gate that cannot run. And that it carries the header distinguishing it from
+    `security/exceptions.toml`, because the two files sit in one repository and mean different
+    things: an entry here says only that the advisory was already present, with no reason, no expiry
+    and nothing granted. A baseline that lost its header would be an exception list to the next
+    reader.
+    """
+    identifiers = supply_baseline(path)
+    assert identifiers, f"{path.name} names no advisories, so it gates nothing"
+
+    header = path.read_text(encoding="utf-8")
+    assert "NOT accepted risks" in header, (
+        f"{path.name} has lost the header that distinguishes it from security/exceptions.toml"
+    )
+    assert "security/exceptions.toml" in header, f"{path.name} does not point at the other file"
+
+
+@pytest.mark.parametrize("path", baselines(), ids=lambda p: p.name)
+def test_a_baseline_is_sorted_and_free_of_duplicates(path: Path) -> None:
+    """The property that makes a diff readable, which is the whole reason it is committed.
+
+    `supply.findings` reads a baseline into a set, so neither order nor repetition changes what the
+    gate does. They change what a *reviewer* sees, and the file exists to be reviewed: an unsorted
+    baseline turns one accepted advisory into a diff nobody can scan.
+    """
+    entries = [
+        line.strip()
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    assert entries == sorted(entries), (
+        f"{path.name} is not sorted, so its diffs will not be readable"
+    )
+    assert len(entries) == len(set(entries)), f"{path.name} names an advisory twice"
+
+
+def test_a_baseline_is_not_confused_with_the_exceptions_file() -> None:
+    """Neither file may quietly become the other, and the check is cheap in both directions.
+
+    An advisory identifier loose in `exceptions.toml` would be an entry with no reason and no expiry
+    in the file whose entire purpose is to require both. TOML would parse it as nothing, so nothing
+    else here would notice.
+    """
+    text = EXCEPTIONS_FILE.read_text(encoding="utf-8")
+    stray = [
+        line.strip()
+        for line in text.splitlines()
+        if ADVISORY.match(line.strip()) and not line.strip().startswith("#")
+    ]
+    assert not stray, (
+        f"{EXCEPTIONS_FILE.name} carries bare advisory identifiers: {stray[:3]}. Those belong in a "
+        f"baseline, which claims only that it was present; an exception claims somebody read "
+        f"it and argued for it, and needs a reason and an expiry."
+    )
 
 
 def test_the_sbom_directory_is_not_committing_spdx_documents() -> None:
