@@ -125,9 +125,16 @@ switch ($Target) {
         # Reads the SBOM rather than the image, so what is scanned is what was inventoried.
         $mount = ($PWD.Path -replace '\\', '/') + "/$SbomDir"
         $documents = @(Get-ChildItem -Path $SbomDir -Filter '*.spdx.json' -ErrorAction Ignore)
-        # The database build date, before any finding. A scan result is a function of the
-        # scanner, the database and the SBOM, and only the third is visible in the output. The
-        # named volume also means one download rather than one per document.
+        # Fetch, then report. `db status` reports on a database and does not fetch one, so on a
+        # fresh cache volume the check meant to observe the database was what stopped it existing:
+        # `database does not exist`, every run, and the scan never reached. `db update` is a no-op
+        # when the cache is current, so the cost of having both is a few seconds on the first run.
+        Invoke-Checked 'docker' @(
+            'run', '--rm', '-v', "${GrypeDbVolume}:/db", '-e', 'GRYPE_DB_CACHE_DIR=/db',
+            $Grype, 'db', 'update'
+        )
+        # The build date, before any finding. A scan result is a function of the scanner, the
+        # database and the SBOM, and only the third is visible in the output.
         Invoke-Checked 'docker' @(
             'run', '--rm', '-v', "${GrypeDbVolume}:/db", '-e', 'GRYPE_DB_CACHE_DIR=/db',
             $Grype, 'db', 'status'

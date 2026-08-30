@@ -156,3 +156,99 @@ The cost is a test that will go red on 2027-03-01 if nobody touches it. On a pub
 that is a visible failure with no maintainer on hand. That is accepted, and on reflection it is not
 obviously a cost: a reviewer reading a red build that says *the security tooling in this repository is six
 months stale and here is the line that says so* learns more about the repository than a green one does.
+
+## Prediction scored, 2026-08-30 (second run)
+
+The bump worked and the scan still returned nothing, this time because of a defect in this
+repository rather than in the pin.
+
+```
+Path:      /db/6/vulnerability.db
+Schema:
+Built:     0001-01-01T00:00:00Z
+Status:    invalid
+[0000] ERROR database does not exist
+```
+
+`/db/6/` is the point: `grype:v0.118.0` asked for schema 6, the current one, so the diagnosis in this
+record was right about the retirement. What was wrong was the precondition added in the same commit.
+**`grype db status` reports on a database; it does not fetch one.** On a fresh cache volume there was
+nothing to report on, so the check written to *observe* the database was the thing preventing it from
+existing, and the scan was never reached. Without that check, the scan's own auto-update would have
+fetched the database and probably succeeded. `db update` now runs first — it is a no-op when the cache
+is current — and a mirror assertion refuses a scan target that reports without fetching.
+
+**Prediction 1 — v0.118.0 loads a database and the scan completes on all six documents. REFUTED**,
+and by my own hand rather than by the pin. Recorded as refuted anyway: the prediction was about the
+outcome, the outcome did not happen, and a prediction that only counts when the cause is external is
+not a prediction.
+
+**Prediction 2 — at least one High or Critical. NOT SCORED.** Still no finding, at any severity, for
+any image. Two runs in, what these six images contain remains unknown, which is worth stating plainly
+rather than letting the surrounding progress imply otherwise.
+
+**Prediction 3 — syft v1.51.1 finds more packages than v1.9.0 in at least four of the five images.
+REFUTED.** More in three of five:
+
+| image | v1.9.0 | v1.51.1 | delta |
+| --- | --- | --- | --- |
+| `apache/airflow` | 578 | 587 | +9 |
+| `apache/spark` | 618 | 618 | 0 |
+| `minio/minio` | 284 | 285 | +1 |
+| `mlops-platform/mlflow` | 177 | 185 | +8 |
+| `postgres:16.3-alpine` | 51 | 51 | 0 |
+
+The pattern is more interesting than the miss. Every gain is in a Python-heavy image and the two
+unchanged ones are the images whose contents are almost entirely OS packages. Two years of cataloguer
+development went into language ecosystems; `dpkg` and `apk` parsing was already complete and had
+nothing to gain. "At least four of five" was a number picked to sound defensible rather than derived
+from that distinction, and the distinction was available before the run.
+
+**Prediction 4 — the mlflow inventory exceeds its base's by fewer than ten lines. CORRECT.** Six
+added, one removed, net five:
+
+```
+boto3==1.34.131
+botocore==1.34.162
+jmespath==1.1.0
+mlops-platform/mlflow==2.13.0     <- not a package; see below
+psycopg2-binary==2.9.9
+s3transfer==0.10.4
+```
+
+Five real packages. This also settles record 019's prediction 3 at the same number. Worth noting where
+the reasoning was loose: that prediction listed urllib3 among boto3's transitive dependencies, which
+is true of boto3 and false of the delta — urllib3 was already in the base. The estimate was right and
+one of its four named reasons was not.
+
+**Prediction 5 — the database cache turns five downloads into one and halves the wall clock. NOT
+SCORED.** No database was ever fetched, so nothing was cached and there is no timing to compare. The
+cache mount is still unproven and stays flagged as the one change here justified by speed.
+
+## What the run found that no prediction covered
+
+**syft catalogues the image as a package inside its own inventory.** `mlops-platform/mlflow==2.13.0`
+was a line in `mlops-platform/mlflow`'s inventory and `ghcr.io/mlflow/mlflow==v2.13.0` a line in its
+base's. Diffing one against the other therefore reported a spurious added line and a spurious removed
+line on top of the five real ones — noise in precisely the diff the inventory format exists to make
+readable, and an image tag bump would produce that pair every time while changing no package at all.
+
+`supply.inventory` now drops the entry the SPDX document declares itself to be *about*, read from the
+document's `DESCRIBES` relationship or `documentDescribes` rather than by matching the image's name. A
+name match would have worked today and silently dropped a real package the day one is named after an
+image. The count of dropped entries is printed per image rather than asserted, because that number is
+the evidence the structural read found what it expected: one per image confirms it, zero says the
+assumption is wrong and nothing was removed. All six inventories will be one line shorter, which is a
+one-time diff with a reason.
+
+**`docker run name:tag@sha256:X` creates no local tag.** The pull is recorded under the digest, so
+`docker image inspect name:tag` reports `No such image` for a reference that ran seconds earlier —
+which is what the digest-confirmation step actually discovered about itself. It was also asking the
+wrong question: the pull lines already prove each pinned digest is fetchable, and what no local
+command can show is whether the *tag* half of the pin still points there, since docker ignores the tag
+once a digest is present. That step now asks a registry, and reads the pins out of the Makefile so it
+cannot drift from them.
+
+**The suite matched its derived row exactly for the second consecutive time**: `220 passed, 0 skipped`
+after `make sbom`, derived on a machine with no container runtime. The `pytest` rows in
+`docs/setup.md` are worth more than they were two runs ago.

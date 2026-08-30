@@ -358,6 +358,13 @@ def test_the_scan_reports_the_database_before_it_reports_a_finding() -> None:
         assert "db" in body.group(0) and "status" in body.group(0), (
             f"{name}'s scan does not report the vulnerability database it used"
         )
+        # `db status` reports on a database and does not fetch one. Asserted because the first
+        # version of this target had the report and not the fetch, so on a fresh cache the check
+        # meant to observe the database was what stopped it existing, and no scan ever ran.
+        assert "update" in body.group(0), (
+            f"{name}'s scan reports the database without fetching it, so a fresh cache reports "
+            f"`database does not exist` and the scan is never reached"
+        )
 
 
 def test_the_database_cache_is_shared_across_documents() -> None:

@@ -146,8 +146,11 @@ scan:
 	@ls $(SBOM_DIR)/*.spdx.json >/dev/null 2>&1 || \
 	  { echo "no SBOMs in $(SBOM_DIR); run 'make sbom' first"; exit 1; }
 	@docker run --rm -v $(GRYPE_DB_VOLUME):/db -e GRYPE_DB_CACHE_DIR=/db \
+	  $(GRYPE) db update || \
+	  { echo "the vulnerability database could not be fetched; see docs/decisions/020"; exit 1; }
+	@docker run --rm -v $(GRYPE_DB_VOLUME):/db -e GRYPE_DB_CACHE_DIR=/db \
 	  $(GRYPE) db status || \
-	  { echo "the vulnerability database would not load; see docs/decisions/020"; exit 1; }
+	  { echo "the vulnerability database will not load; see docs/decisions/020"; exit 1; }
 	@gate="--fail-on $(SCAN_FAIL_ON)"; \
 	if [ "$(SCAN_FAIL_ON)" = "none" ]; then gate=""; fi; \
 	for document in $(SBOM_DIR)/*.spdx.json; do \

@@ -28,6 +28,14 @@ NO_VERSION = "NOASSERTION"
 #: cannot be split back apart, so such a package is refused rather than written.
 SEPARATOR = "=="
 
+#: The SPDX relationship that names what a document is about. Syft emits the image itself as a
+#: package and points this at it, so `mlops-platform/mlflow==2.13.0` appeared inside
+#: `mlops-platform/mlflow`'s own inventory and `ghcr.io/mlflow/mlflow==v2.13.0` inside its base's.
+#: Left in, the two show up in a diff of one against the other as a spurious added line and a
+#: spurious removed line, which is precisely the noise a reviewable inventory exists to not have --
+#: and worse, an image tag bump would produce that pair every time while changing no package.
+DESCRIBES = "DESCRIBES"
+
 
 class InventoryError(Exception):
     """The input is not an SPDX package list this can reduce.
@@ -36,6 +44,32 @@ class InventoryError(Exception):
     failed, and an empty inventory committed in its place would read as an image containing no
     packages, which is a stronger and more wrong claim than a missing file.
     """
+
+
+def _described(document: dict[str, Any]) -> set[str]:
+    """The SPDX identifiers of what this document is *about*, rather than what is in it.
+
+    Read from the document's own structure rather than by matching names against the image being
+    catalogued. A name match would be a guess that happens to work, and would silently drop a real
+    package one day if a package were ever named after the image. Both spellings are honoured
+    because SPDX 2.x allows either, and an absent one is not an error: a document that declares
+    nothing about its subject simply has no entry to remove.
+    """
+    found: set[str] = set()
+    describes = document.get("documentDescribes")
+    if isinstance(describes, list):
+        found |= {item for item in describes if isinstance(item, str)}
+    relationships = document.get("relationships")
+    if isinstance(relationships, list):
+        for relationship in relationships:
+            if not isinstance(relationship, dict):
+                continue
+            if relationship.get("relationshipType") != DESCRIBES:
+                continue
+            related = relationship.get("relatedSpdxElement")
+            if isinstance(related, str):
+                found.add(related)
+    return found
 
 
 def _entries(document: Any) -> list[Any]:
@@ -65,10 +99,14 @@ def inventory(document: Any) -> list[str]:
     inventory whose line order can change between runs produces diffs that say nothing, which is
     the failure this file exists to prevent.
     """
+    entries = _entries(document)
+    described = _described(document) if isinstance(document, dict) else set()
     lines: set[str] = set()
-    for index, entry in enumerate(_entries(document)):
+    for index, entry in enumerate(entries):
         if not isinstance(entry, dict):
             raise InventoryError(f"package {index} is a {type(entry).__name__}, not an object")
+        if entry.get("SPDXID") in described:
+            continue
         name = entry.get("name")
         if not isinstance(name, str) or not name:
             raise InventoryError(f"package {index} has no usable `name`: {entry.get('name')!r}")
@@ -81,6 +119,11 @@ def inventory(document: Any) -> list[str]:
                 f"split back apart: name={name!r} version={version!r}"
             )
         lines.add(f"{name}{SEPARATOR}{version}")
+    if not lines:
+        raise InventoryError(
+            "every package in the document is the document's own subject, which cannot be right: "
+            "an image containing nothing is not a result worth committing"
+        )
     return sorted(lines)
 
 
@@ -97,6 +140,26 @@ def write(source: Path, destination: Path) -> int:
     return len(lines)
 
 
+def subject_count(source: Path) -> int:
+    """How many entries `write` dropped as the document's own subject.
+
+    Reported by the runner rather than asserted, because the number is the evidence: one per image
+    means the structural read above found what it expected to, and zero means the cataloguer does
+    not describe its subject the way this assumes and nothing was removed. Either way the inventory
+    is correct; only the diff noise differs.
+    """
+    document = json.loads(source.read_text(encoding="utf-8"))
+    if not isinstance(document, dict):
+        return 0
+    described = _described(document)
+    packages = document.get("packages")
+    if not isinstance(packages, list):
+        return 0
+    return sum(
+        1 for entry in packages if isinstance(entry, dict) and entry.get("SPDXID") in described
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     arguments = sys.argv[1:] if argv is None else argv
     if len(arguments) != 2:
@@ -111,7 +174,9 @@ def main(argv: list[str] | None = None) -> int:
     except (InventoryError, json.JSONDecodeError, OSError) as error:
         print(f"{source}: {error}", file=sys.stderr)
         return 1
-    print(f"{destination}: {count} packages")
+    dropped = subject_count(source)
+    suffix = f", {dropped} document subject entr{'y' if dropped == 1 else 'ies'} dropped"
+    print(f"{destination}: {count} packages{suffix if dropped else ''}")
     return 0
 
 

@@ -18,7 +18,14 @@ from pathlib import Path
 
 import pytest
 
-from supply.inventory import NO_VERSION, InventoryError, inventory, main, write
+from supply.inventory import (
+    NO_VERSION,
+    InventoryError,
+    inventory,
+    main,
+    subject_count,
+    write,
+)
 
 
 def document(*packages: dict[str, object]) -> dict[str, object]:
@@ -156,3 +163,119 @@ def test_the_entrypoint_refuses_the_wrong_number_of_arguments() -> None:
     """2, not 1: the destination is explicit so the runner decides where committed files land."""
     assert main([]) == 2
     assert main(["only-a-source.spdx.json"]) == 2
+
+
+def described(subject: str, *packages: dict[str, object]) -> dict[str, object]:
+    """A document whose DESCRIBES relationship points at one of its own packages.
+
+    The shape syft emits: the image is catalogued as a package and the document says it is what the
+    document is about. Both spellings SPDX 2.x allows are exercised separately below.
+    """
+    return {
+        "spdxVersion": "SPDX-2.3",
+        "packages": list(packages),
+        "relationships": [
+            {
+                "spdxElementId": "SPDXRef-DOCUMENT",
+                "relationshipType": "DESCRIBES",
+                "relatedSpdxElement": subject,
+            }
+        ],
+    }
+
+
+def test_the_documents_own_subject_is_not_a_line_in_its_inventory() -> None:
+    """The image is not a package in itself, and leaving it in poisons the one diff that matters.
+
+    `mlops-platform/mlflow==2.13.0` appeared inside `mlops-platform/mlflow`'s own inventory and
+    `ghcr.io/mlflow/mlflow==v2.13.0` inside its base's, so diffing one against the other reported a
+    spurious added line and a spurious removed line on top of the five real packages. An image tag
+    bump would produce that pair every time while changing no package at all.
+    """
+    result = inventory(
+        described(
+            "SPDXRef-Package-image",
+            {"SPDXID": "SPDXRef-Package-image", "name": "acme/thing", "versionInfo": "1.0"},
+            {"SPDXID": "SPDXRef-Package-zlib", "name": "zlib", "versionInfo": "1.3.1"},
+        )
+    )
+    assert result == ["zlib==1.3.1"]
+
+
+def test_the_older_spdx_spelling_is_honoured_too() -> None:
+    """SPDX 2.x allows `documentDescribes` as well, and a cataloguer may emit either."""
+    document = {
+        "spdxVersion": "SPDX-2.2",
+        "documentDescribes": ["SPDXRef-Package-image"],
+        "packages": [
+            {"SPDXID": "SPDXRef-Package-image", "name": "acme/thing", "versionInfo": "1.0"},
+            {"SPDXID": "SPDXRef-Package-apt", "name": "apt", "versionInfo": "2.6.1"},
+        ],
+    }
+    assert inventory(document) == ["apt==2.6.1"]
+
+
+def test_a_document_that_describes_nothing_loses_no_package() -> None:
+    """The drop is driven by the document's own structure, so its absence is not an error.
+
+    A cataloguer that declares no subject simply has no entry to remove, and the inventory is
+    complete either way. Asserted because the alternative reading -- treat a missing relationship as
+    a reason to guess by name -- is the one that would silently drop a real package one day.
+    """
+    result = inventory(document({"name": "zlib", "versionInfo": "1.3.1"}))
+    assert result == ["zlib==1.3.1"]
+
+
+def test_a_package_sharing_the_subjects_name_is_kept() -> None:
+    """The identifier decides, not the name.
+
+    This is the case a name match would get wrong: a package genuinely called `acme/thing` alongside
+    an image of the same name would vanish from the inventory of the image that contains it.
+    """
+    result = inventory(
+        described(
+            "SPDXRef-Package-image",
+            {"SPDXID": "SPDXRef-Package-image", "name": "acme/thing", "versionInfo": "1.0"},
+            {"SPDXID": "SPDXRef-Package-real", "name": "acme/thing", "versionInfo": "9.9"},
+        )
+    )
+    assert result == ["acme/thing==9.9"]
+
+
+def test_a_document_of_nothing_but_its_own_subject_is_refused() -> None:
+    """An empty inventory would read as an image containing nothing, which is a worse claim."""
+    with pytest.raises(InventoryError, match="document's own subject"):
+        inventory(
+            described(
+                "SPDXRef-Package-image",
+                {"SPDXID": "SPDXRef-Package-image", "name": "acme/thing", "versionInfo": "1.0"},
+            )
+        )
+
+
+def test_the_number_of_dropped_subjects_is_reportable(tmp_path: Path) -> None:
+    """Reported rather than asserted in the suite, because the number is the evidence.
+
+    One per image means the structural read found what it expected; zero means the cataloguer does
+    not describe its subject this way and nothing was removed. The inventory is right either way, so
+    a run that reports zero is information rather than a failure.
+    """
+    source = tmp_path / "image.spdx.json"
+    source.write_text(
+        json.dumps(
+            described(
+                "SPDXRef-Package-image",
+                {"SPDXID": "SPDXRef-Package-image", "name": "acme/thing", "versionInfo": "1.0"},
+                {"SPDXID": "SPDXRef-Package-zlib", "name": "zlib", "versionInfo": "1.3.1"},
+            )
+        ),
+        encoding="utf-8",
+    )
+    assert subject_count(source) == 1
+    assert write(source, tmp_path / "out.txt") == 1
+
+    plain = tmp_path / "plain.spdx.json"
+    plain.write_text(
+        json.dumps(document({"name": "zlib", "versionInfo": "1.3.1"})), encoding="utf-8"
+    )
+    assert subject_count(plain) == 0

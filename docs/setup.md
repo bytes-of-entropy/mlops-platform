@@ -104,7 +104,7 @@ broken repository rather than like a wrong location:
 
 **On that last row, because it costs a confusing half hour otherwise.** Git for Windows already ships all
 three, in `usr\bin` beside the installation, but PowerShell does not have that directory on `PATH`, so a run
-from PowerShell skips those twenty tests and reports `181 passed, 34 skipped` with everything else green. Add it
+from PowerShell skips those twenty tests and reports `187 passed, 34 skipped` with everything else green. Add it
 for the session and they run:
 
 ```powershell
@@ -381,10 +381,10 @@ otherwise.
 | `ruff format --check .` | `59 files already formatted`: 34 Python and 26 Markdown, less `.pytest_cache/README.md`, which is ignored by git and therefore by the formatter |
 | `mypy` | `Success: no issues found in 32 source files` |
 | `pre-commit run --all-files` | 8 lines, each `Passed`; no summary line |
-| `pytest`, no runtime | `201 passed, 14 skipped` |
-| `pytest`, runtime but no credentials | `206 passed, 9 skipped`, derived rather than measured |
-| `pytest`, runtime and credentials, before `make sbom` | `214 passed, 1 skipped`, derived. `140 passed, 0 skipped` was measured on the build machine on 2026-08-30 and matched the row derived for it exactly; 75 assertions have landed since, so this row is again a derivation awaiting its measurement |
-| `pytest`, runtime and credentials, after `make sbom` | `220 passed, 0 skipped`, derived. A runtime clears thirteen of the fourteen skips; the fourteenth is an empty parameter set and only an inventory clears it. `test_an_inventory_is_sorted_and_shaped_for_review` is parameterised over the files in `sbom/`, so six inventories turn one skip into six checks, which is where the extra five in the total come from |
+| `pytest`, no runtime | `207 passed, 14 skipped` |
+| `pytest`, runtime but no credentials | `212 passed, 9 skipped`, derived rather than measured |
+| `pytest`, runtime and credentials, before `make sbom` | `220 passed, 1 skipped`, derived |
+| `pytest`, runtime and credentials, after `make sbom` | `226 passed, 0 skipped`, derived. A runtime clears thirteen of the fourteen skips; the fourteenth is an empty parameter set and only an inventory clears it. `test_an_inventory_is_sorted_and_shaped_for_review` is parameterised over the files in `sbom/`, so six inventories turn one skip into six checks, which is where the extra six in the total come from |
 | `docker images mlops-platform/mlflow` | one row, tag `2.13.0`, after `build` |
 | `make doctor` | three checks (`container runtime`, `credentials`, `postgres volume`), each `OK`, except that the volume check reports it cannot verify a volume created before the fingerprint existed |
 
@@ -392,10 +392,12 @@ Only the first `pytest` row is measured. The other three are derived from which 
 because the authoring machine has no container runtime and cannot produce any of them. If a run disagrees
 with the row it should be on, **that disagreement is the finding**. Record it before fixing it.
 
-The derivations are worth something rather than nothing for one reason: the last time this table carried a
-derived zero-skip row, the build machine measured `140 passed, 0 skipped` and the derivation had said
-exactly that. One match is not a track record, so the three rows below the first stay labelled derived
-until each has been run.
+The derivations have now matched a measurement twice. `140 passed, 0 skipped` was derived and then
+measured on 2026-08-30; later the same day the post-`make sbom` row was derived at `220 passed, 0 skipped`
+on a machine with no container runtime, and the build machine measured exactly that. Two matches is not a
+guarantee and the three rows below the first stay labelled derived until each has been run, but the
+derivation is a method rather than a guess: each row is the first row plus the tests whose guards the run
+would clear, and that arithmetic has been right every time it has been checked.
 
 The fourteen skips divide as five image-resolution checks, one per registry reference: the four tags
 the spine pulls plus the base the one built image comes from (they ask a registry whether each still
@@ -410,7 +412,7 @@ plainly that the artefact it would check does not exist.
 **Every row above assumes `sh`, `sha256sum` and `od` are reachable.** Without them, subtract twenty from
 the passed count and add twenty to the skipped count in each row: two preflight tests execute the Postgres
 init script, and eighteen parse the Makefile's recipes, and all twenty are gated on a POSIX shell rather
-than on a runtime, so no amount of Docker unskips them. Measured, not derived: `181 passed, 34 skipped`
+than on a runtime, so no amount of Docker unskips them. Measured, not derived: `187 passed, 34 skipped`
 on the authoring machine with `sh`, `sha256sum` and `od` taken off `PATH`.
 
 **The tier reached the pass condition on the build machine twice**: `120 passed, 0 skipped` at the commit tagged `v0.1.0`, and `124 passed, 0 skipped` at `v0.1.2`, after `docs/decisions/015` added two artifact-store tests and two compose-contract tests. The second run is the stronger evidence: the first passed while a configured artifact root pointed at a bucket nothing created, because no test then walked that path. Two earlier runs are
@@ -509,24 +511,54 @@ database was built 24 weeks ago (max allowed age is 5 days)` before reading a si
 argues it, and section 8 has the symptom. Renewing means the version, the digest and the date, edited
 together.
 
-`make scan` prints `grype db status` before any finding, so the database's build date and schema sit above
-the results. A scan result is a function of three things — the scanner, the database, the SBOM — and only
+`make scan` fetches the database with `grype db update`, then prints `grype db status` before any finding,
+so the build date and schema sit above the results. Both, in that order, because `db status` reports on a
+database and does not fetch one: with only the report, a fresh cache produced `database does not exist` and
+the check written to observe the database was what stopped it existing. A mirror assertion now refuses a
+scan target that reports without fetching. A scan result is a function of three things — the scanner, the database, the SBOM — and only
 the third was visible in the output. The database is cached in a named volume, `mlops-platform-grype-db`,
 because `--rm` discards the container filesystem and an uncached run downloads it once per document.
 
 Run `build` first. The one image built here has to exist locally before there is anything to catalogue.
 
-**Where this stands after the first run.** The SBOM half worked: five inventories, and the shape check went
-from one skipped empty parameter set to five passing assertions. Package counts were `apache/spark` 618,
-`apache/airflow` 578, `minio/minio` 284, `mlops-platform/mlflow` 177, `postgres:16.3-alpine` 51. The scan
-half returned nothing, for the reason above, so **all four of record 019's predictions are unscored** and
-what these images contain is still unknown.
+**Where this stands after two runs.** The SBOM half works. Six inventories, and the shape check went from
+one skipped empty parameter set to six passing assertions — the suite reached `220 passed, 0 skipped`,
+matching a row derived on a machine with no container runtime. Package counts under `syft:v1.51.1`:
+
+| image | packages |
+| --- | --- |
+| `apache/spark:3.5.1-python3` | 618 |
+| `apache/airflow:2.9.2-python3.11` | 587 |
+| `minio/minio` | 285 |
+| `mlops-platform/mlflow:2.13.0` | 185 |
+| `ghcr.io/mlflow/mlflow:v2.13.0` | 180 |
+| `postgres:16.3-alpine` | 51 |
+
+Cataloguing the base is what makes the built image's number mean something. `mlops-platform/mlflow` exceeds
+it by five packages — `boto3`, `botocore`, `jmespath`, `psycopg2-binary`, `s3transfer` — which is the whole
+of what this repository adds, visible in one `comm` rather than inferred. `urllib3` is not among them; it was
+already in the base.
+
+Those counts include one line that is not a package. syft catalogues the image itself and points the SPDX
+`DESCRIBES` relationship at it, so `mlops-platform/mlflow==2.13.0` was a line inside
+`mlops-platform/mlflow`'s own inventory. Diffing an image against its base then reported a spurious added
+line and a spurious removed line, and an image tag bump would produce that pair every time while changing no
+package. `supply.inventory` now drops whatever the document declares itself to be about, read from the
+document's structure rather than by matching the image's name — a name match would work today and silently
+drop a real package the day one is named after an image. Every inventory is one line shorter than the table
+above, once.
+
+**The scan half has returned nothing, twice.** The first attempt failed on a retired database schema; the
+second on the missing `db update` described above. So **all four of record 019's predictions and four of
+record 020's five remain unscored**, and what these six images contain is still unknown. That is worth
+stating plainly rather than letting the progress around it imply otherwise.
 
 **Three things are still not done, and a green suite hides none of them.**
 
-1. **No scan has produced a finding.** Pinning made the images *identical* everywhere, not trustworthy: a
-   pinned digest of a vulnerable image is a reliably vulnerable image, and the scan is the step that would
-   say so. It has not yet said anything.
+1. **No scan has produced a finding, after two attempts.** Pinning made the images *identical*
+   everywhere, not trustworthy: a pinned digest of a vulnerable image is a reliably vulnerable image, and
+   the scan is the step that would say so. It has not yet said anything, and neither failure was about the
+   images.
 2. **`security/exceptions.toml` is empty and not wired into the scanner.** The half that runs today is the
    half that rots: every entry needs a reason of at least forty characters and an unquoted expiry date, and
    an expired entry fails the *suite*, on any machine, with no daemon. Converting an accepted finding into
@@ -668,6 +700,17 @@ cannot be missing by construction.
 [`decisions/005`](decisions/005-migrate-off-the-withdrawn-spark-image.md) and
 [`011`](decisions/011-what-is-inside-an-image-is-a-claim.md) record all of it, and a contract test now
 refuses a healthcheck naming a binary its image is not recorded as providing.
+
+### `database does not exist`, with `Status: invalid` and a zero build date
+
+`make scan`, on a machine that has never run it. `grype db status` reports on a database and does not fetch
+one, so on an empty cache volume there is nothing to report and the command exits non-zero. The target runs
+`grype db update` first for exactly this reason; if that line is missing, the check written to observe the
+database is what prevents it existing. Record 020 scores it as a defect of this repository rather than of
+the pin.
+
+`docker volume rm mlops-platform-grype-db` forces a fresh download on the next run, which is the thing to
+try if the cache is suspected of holding a partial database.
 
 ### `db could not be loaded: the vulnerability database was built N weeks ago`
 
