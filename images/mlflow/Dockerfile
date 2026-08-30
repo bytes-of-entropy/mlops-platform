@@ -6,11 +6,17 @@
 # Pinned by digest as well as by tag. The tag is a pointer its publisher can move; the digest is
 # the bytes. Both are kept because the tag is what a reader recognises and the digest is what a
 # build resolves, and a digest with no tag beside it is unreadable. See docs/decisions/018.
-FROM ghcr.io/mlflow/mlflow:v2.13.0@sha256:47c5c26d06a4edadab1a7c10a4c9d3653427a3173da1e771e2b8efd7e82695af
+FROM ghcr.io/mlflow/mlflow:v2.22.4@sha256:ee81106cd77214d324557a92a06f94be3a1ecf250f8c3640c0182de17c140718
 
 # psycopg2-binary rather than psycopg2: the source distribution needs a compiler and libpq headers
 # this image does not carry either, so building from source would trade one missing dependency for
 # three. Both pins are exact, because an image built from a floating pin is not a pinned image.
+#
+# Neither moved when the base did, and that is a decision rather than an oversight. The first scan
+# returned 5,017 findings across the spine and *zero* of them in either of these two packages: the
+# built image and its base came back with identical counts, so nothing this file installs contributes
+# a single finding. A bump with no security argument behind it is a change that can only add risk.
+# Record 021 records the numbers.
 RUN pip install --no-cache-dir \
         psycopg2-binary==2.9.9 \
         boto3==1.34.131

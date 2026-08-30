@@ -317,7 +317,7 @@ docker ps                    # what is still up, if anything
 `build` comes before either `up` for one reason: both `up` targets bound their wait, and a cold build
 inside that budget is minutes spent on work whose result is identical every time. It prints two
 `pip install` lines and ends in a tagged image, after which `docker images mlops-platform/mlflow`
-shows `2.13.0`. If the install step fails, that is PyPI or the network rather than the stack, and it
+shows `2.22.4`. If the install step fails, that is PyPI or the network rather than the stack, and it
 fails here, where it is legible, instead of 300 seconds into a `--wait`.
 
 **Zero skipped is part of the pass condition.** This is the only place the integration tier ever runs,
@@ -331,7 +331,7 @@ assumed here, never checked. It is the same assumption that turned out to be fal
 the image is local, the probe costs one command and no pull:
 
 ```powershell
-docker run --rm apache/airflow:2.9.2-python3.11 python -c "import psycopg2; print(psycopg2.__version__)"
+docker run --rm apache/airflow:2.11.2-python3.11 python -c "import psycopg2; print(psycopg2.__version__)"
 ```
 
 A version string means the assumption held. `ModuleNotFoundError` means Airflow needs the same
@@ -385,7 +385,7 @@ otherwise.
 | `pytest`, runtime but no credentials | `212 passed, 9 skipped`, derived rather than measured |
 | `pytest`, runtime and credentials, before `make sbom` | `220 passed, 1 skipped`, derived |
 | `pytest`, runtime and credentials, after `make sbom` | `226 passed, 0 skipped`, derived. A runtime clears thirteen of the fourteen skips; the fourteenth is an empty parameter set and only an inventory clears it. `test_an_inventory_is_sorted_and_shaped_for_review` is parameterised over the files in `sbom/`, so six inventories turn one skip into six checks, which is where the extra six in the total come from |
-| `docker images mlops-platform/mlflow` | one row, tag `2.13.0`, after `build` |
+| `docker images mlops-platform/mlflow` | one row, tag `2.22.4`, after `build` |
 | `make doctor` | three checks (`container runtime`, `credentials`, `postgres volume`), each `OK`, except that the volume check reports it cannot verify a volume created before the fingerprint existed |
 
 Only the first `pytest` row is measured. The other three are derived from which guard each test carries,
@@ -433,7 +433,7 @@ Record 017 argues each, and records why this image is not rebuilt multi-stage fr
 **Digest pinning is done, and one reference is deliberately exempt.** Every pulled `image` key and
 every `FROM` now carries both a tag and a digest, as `name:tag@sha256:...`: the tag because it is what a
 reader recognises and what a version bump edits, the digest because it is what the build resolves.
-`mlops-platform/mlflow:2.13.0` stays a bare tag, because it is built here and a local digest is a fact
+`mlops-platform/mlflow:2.22.4` stays a bare tag, because it is built here and a local digest is a fact
 about one machine's image store rather than a registry fact — pinning it would tie the spine to an
 artifact nobody else can pull, which is precisely the mistake record 012's title names. Five assertions
 enforce all of that with no daemon, reusing record 012's own pulled-versus-built split so a service
@@ -521,55 +521,84 @@ because `--rm` discards the container filesystem and an uncached run downloads i
 
 Run `build` first. The one image built here has to exist locally before there is anything to catalogue.
 
-**Where this stands after two runs.** The SBOM half works. Six inventories, and the shape check went from
-one skipped empty parameter set to six passing assertions — the suite reached `220 passed, 0 skipped`,
-matching a row derived on a machine with no container runtime. Package counts under `syft:v1.51.1`:
+**Where this stands: the scan ran, and its answer was a version bump.**
 
-| image | packages |
-| --- | --- |
-| `apache/spark:3.5.1-python3` | 618 |
-| `apache/airflow:2.9.2-python3.11` | 587 |
-| `minio/minio` | 285 |
-| `mlops-platform/mlflow:2.13.0` | 185 |
-| `ghcr.io/mlflow/mlflow:v2.13.0` | 180 |
-| `postgres:16.3-alpine` | 51 |
+The third attempt worked — `grype db update` fetched schema v6.1.9 built that morning, and all six
+documents were scanned in 97 seconds. It returned **5,017 findings: 185 Critical, 1,197 High, 1,390
+unique advisory identifiers**, and **4,121 of the 5,017 name a fixed version.**
 
-Cataloguing the base is what makes the built image's number mean something. `mlops-platform/mlflow` exceeds
-it by five packages — `boto3`, `botocore`, `jmespath`, `psycopg2-binary`, `s3transfer` — which is the whole
-of what this repository adds, visible in one `comm` rather than inferred. `urllib3` is not among them; it was
-already in the base.
+Measured on the images as they were *before* the bump described below, so the tags in this table are the
+old ones:
 
-Those counts include one line that is not a package. syft catalogues the image itself and points the SPDX
-`DESCRIBES` relationship at it, so `mlops-platform/mlflow==2.13.0` was a line inside
-`mlops-platform/mlflow`'s own inventory. Diffing an image against its base then reported a spurious added
-line and a spurious removed line, and an image tag bump would produce that pair every time while changing no
-package. `supply.inventory` now drops whatever the document declares itself to be about, read from the
-document's structure rather than by matching the image's name — a name match would work today and silently
-drop a real package the day one is named after an image. Every inventory is one line shorter than the table
-above, once.
+| image, as scanned | packages | findings | Critical | High |
+| --- | --- | --- | --- | --- |
+| `apache/spark:3.5.1-python3` | 617 | 1,750 | 5 | 93 |
+| `apache/airflow:2.9.2-python3.11` | 586 | 1,566 | 88 | 481 |
+| `mlops-platform/mlflow:2.13.0` | 184 | 603 | 27 | 212 |
+| `ghcr.io/mlflow/mlflow:v2.13.0` | 179 | 603 | 27 | 212 |
+| `minio/minio:RELEASE.2024-06-04` | 284 | 260 | 27 | 77 |
+| `postgres:16.3-alpine` | 50 | 235 | 11 | 122 |
 
-**The scan half has returned nothing, twice.** The first attempt failed on a retired database schema; the
-second on the missing `db update` described above. So **all four of record 019's predictions and four of
-record 020's five remain unscored**, and what these six images contain is still unknown. That is worth
-stating plainly rather than letting the progress around it imply otherwise.
+Two things in that table are worth more than the totals. **The built image and its base are identical**
+— 603 findings, 27 Critical, 212 High each — so the five packages this repository adds (`boto3`,
+`botocore`, `jmespath`, `psycopg2-binary`, `s3transfer`) contribute *zero* findings at any severity.
+Nothing about the vulnerability profile of the one image built here is attributable to a decision made
+here. And **the severity is in the operating system, not the application**: of the 1,382 Critical and
+High, 731 are `deb` packages and 39 `apk`.
 
-**Three things are still not done, and a green suite hides none of them.**
+So the number is a measurement of staleness. Every image was 12–21 months old, and 90% of the serious
+findings name a version that fixes them. Record 019 had written down in advance that if a clean scan
+would need more than a handful of exceptions then the bases are the problem — and 1,382 is not a
+handful, so **the exceptions mechanism will not be used to make this gate pass.** Record 021 bumps every
+pulled reference to the newest release in its current major line instead:
 
-1. **No scan has produced a finding, after two attempts.** Pinning made the images *identical*
-   everywhere, not trustworthy: a pinned digest of a vulnerable image is a reliably vulnerable image, and
-   the scan is the step that would say so. It has not yet said anything, and neither failure was about the
-   images.
-2. **`security/exceptions.toml` is empty and not wired into the scanner.** The half that runs today is the
-   half that rots: every entry needs a reason of at least forty characters and an unquoted expiry date, and
-   an expired entry fails the *suite*, on any machine, with no daemon. Converting an accepted finding into
-   a scanner ignore rule is the other half, and it is owed at the first accepted finding rather than built
-   for zero of them.
-3. **CI does not scan.** The threshold worth gating at is a decision that needs the first result rather
-   than a guess made before it. What CI does cover is the code around the scan: `supply.images` and
-   `supply.inventory` are checked in the contract tier, which needs no daemon.
+| reference | was | now |
+| --- | --- | --- |
+| `postgres` | `16.3-alpine` | `16.15-alpine` |
+| `apache/airflow` | `2.9.2-python3.11` | `2.11.2-python3.11` |
+| `apache/spark` | `3.5.1-python3` | `3.5.9-python3` |
+| `minio/minio` | `RELEASE.2024-06-04` | `RELEASE.2025-09-07` |
+| `ghcr.io/mlflow/mlflow` | `v2.13.0` | `v2.22.4` |
+| `mlops-platform/mlflow` | `2.13.0` | `2.22.4` |
 
-**What M1 still owes:** a `make scan` that returns findings, and the images in GHCR at their digests. The
-second needs a credential and a decision about publishing, so it is not merely unrun work.
+Crossing a major line is a migration rather than a bump, and each one is refused for a specific reason
+rather than out of caution: Postgres 17+ will not start against a `PGDATA` initialised by 16, Airflow 3
+replaces the webserver with an api-server and changes what `standalone` does, MLflow 3 changes tracking
+semantics, and Spark 4 is a decision about what Repo 1's M2 work targets. Record 021 has the table and
+the reasoning.
+
+**The gate threshold is still unset, deliberately.** `SCAN_FAIL_ON` defaults to `high` and will fail;
+that is a known state, not a gate anyone claims to pass. Choosing a threshold before the bump would have
+meant picking a number to fit findings nobody had tried to fix. It gets chosen from the numbers the bump
+produces, which is what "gate on evidence" means here.
+
+**One more thing about the inventories, which is a gap rather than a feature.** Record 019's argument for
+committing an inventory is that a version bump produces a readable diff. The bump above is the first
+since that mechanism landed, and **no inventory has ever been committed** — they are written on the
+machine with a daemon and have never travelled back, so the property the format exists for has not once
+been exercised. Getting the post-bump inventories committed is what turns that mechanism from a claim
+into a working loop.
+
+Syft also catalogues each image as a package inside its own inventory and points the SPDX `DESCRIBES`
+relationship at it, so `mlops-platform/mlflow==2.13.0` was a line in `mlops-platform/mlflow`'s own
+inventory and diffing it against its base produced a spurious added line and a spurious removed line.
+`supply.inventory` now drops whatever the document declares itself to be about, read from the document's
+structure rather than by matching the image's name — a name match would work today and silently drop a
+real package the day one is named after an image. It fired on all six images, one entry each, which is
+why the package counts above are one lower than the raw catalogue.
+
+**Two things are still not done, and a green suite hides neither.**
+
+1. **`security/exceptions.toml` is empty and not wired into the scanner.** The half that runs today is
+   the half that rots: every entry needs a reason of at least forty characters and an unquoted expiry
+   date, and an expired entry fails the *suite*, on any machine, with no daemon. Converting an accepted
+   finding into a scanner ignore rule is the other half. After record 021 it is also less urgent than it
+   looked: the answer to a thousand findings was never going to be a thousand exceptions.
+2. **CI does not scan.** It needs the threshold, and the threshold needs the post-bump numbers.
+
+**What M1 still owes:** a re-scan proving the bump did what record 021 predicts, a threshold chosen from
+it, the inventories committed, and the images in GHCR at their digests. The last needs a credential and a
+decision about publishing, so it is not merely unrun work.
 
 ## 8. Troubleshooting by symptom
 
@@ -734,9 +763,9 @@ floating tag.
 
 Read the tag it names before believing that, because the module probes two different kinds of
 reference: the tags this spine pulls, and the `FROM` of the one it builds. A failure naming
-`ghcr.io/mlflow/mlflow:v2.13.0`, `apache/spark:3.5.1-python3`, `apache/airflow:2.9.2-python3.11`,
-`postgres:16.3-alpine` or `minio/minio:…` is the withdrawal case above. A failure naming
-`mlops-platform/mlflow:2.13.0` is not, because no registry has heard of a tag this repository produces, so
+`ghcr.io/mlflow/mlflow:v2.22.4`, `apache/spark:3.5.9-python3`, `apache/airflow:2.11.2-python3.11`,
+`postgres:16.15-alpine` or `minio/minio:…` is the withdrawal case above. A failure naming
+`mlops-platform/mlflow:2.22.4` is not, because no registry has heard of a tag this repository produces, so
 that is the sorting itself having regressed, and
 [`decisions/012`](decisions/012-a-built-tag-is-not-a-registry-fact.md) is the entry to read.
 
@@ -798,8 +827,8 @@ volume takes the evidence with it.
 ```powershell
 docker ps -a --filter volume=<the hex name>
 docker volume inspect <the hex name>
-docker image inspect ghcr.io/mlflow/mlflow:v2.13.0 --format '{{json .Config.Volumes}}'
-docker image inspect apache/airflow:2.9.2-python3.11 --format '{{json .Config.Volumes}}'
+docker image inspect ghcr.io/mlflow/mlflow:v2.22.4 --format '{{json .Config.Volumes}}'
+docker image inspect apache/airflow:2.11.2-python3.11 --format '{{json .Config.Volumes}}'
 ```
 
 The last two decide it: a non-`null` answer names a path the compose file should be mounting and is
