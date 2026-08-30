@@ -14,4 +14,19 @@ RUN pip install --no-cache-dir \
 # The bucket provisioner runs as a one-shot from this same image, because this is where boto3 already
 # is. A second image carrying one dependency for one script would be a second thing to pin and
 # rebuild. See docs/decisions/015.
-COPY ensure_buckets.py /opt/ensure_buckets.py
+#
+# Copied read-only and owned by root: the account the container ends as does not need to write to a
+# script it only executes, and a one-shot that can rewrite itself has more privilege than its job.
+COPY --chmod=0444 ensure_buckets.py /opt/ensure_buckets.py
+
+# The published MLflow image runs as root and adds nothing to change that, so the tracking server, the
+# provisioner that shares this image, and anything either executes all run as uid 0. On this spine that
+# is not an exploit; it is the default that turns one container escape into a host compromise.
+#
+# A named account rather than a bare `USER 1000`: a uid with no passwd entry produces confusing failures
+# in anything that looks up its own identity, and `mlflow` says what it is where a number says what it
+# happens to be. No login shell and no password, because nothing here logs in. See
+# docs/decisions/017, which also records why this image is not rebuilt multi-stage from a slim base.
+RUN groupadd --gid 10001 mlflow \
+    && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin mlflow
+USER mlflow

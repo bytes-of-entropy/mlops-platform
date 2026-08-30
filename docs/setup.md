@@ -378,12 +378,12 @@ otherwise.
 | Command | Expected output |
 | --- | --- |
 | `ruff check .` | `All checks passed!` for 25 paths: the 24 modules plus `pyproject.toml`, read for configuration |
-| `ruff format --check .` | `47 files already formatted`, Python and Markdown; the formatter handles both |
-| `mypy` | `Success: no issues found in 24 source files` |
+| `ruff format --check .` | `49 files already formatted`, Python and Markdown; the formatter handles both |
+| `mypy` | `Success: no issues found in 25 source files` |
 | `pre-commit run --all-files` | 8 lines, each `Passed`; no summary line |
-| `pytest`, no runtime | `115 passed, 13 skipped` |
-| `pytest`, runtime but no credentials | `120 passed, 8 skipped`, derived rather than measured |
-| `pytest`, runtime and credentials | `128 passed, 0 skipped`; the M0 pass condition. `124 passed, 0 skipped` was measured at `v0.1.2` and four classifier tests have landed since, so this row is derived from a measurement rather than being one |
+| `pytest`, no runtime | `122 passed, 13 skipped` |
+| `pytest`, runtime but no credentials | `127 passed, 8 skipped`, derived rather than measured |
+| `pytest`, runtime and credentials | `135 passed, 0 skipped`. `128 passed, 0 skipped` was measured on the build machine on 2026-08-27 and was the M0 pass condition; seven image-contract tests have landed since, so this row is derived from a measurement rather than being one |
 | `docker images mlops-platform/mlflow` | one row, tag `2.13.0`, after `build` |
 | `make doctor` | three checks (`container runtime`, `credentials`, `postgres volume`), each `OK`, except that the volume check reports it cannot verify a volume created before the fingerprint existed |
 
@@ -408,6 +408,34 @@ worth keeping beside it, because both were misread at the time. `3 failed, 110 p
 190.24s` was the first, and all six of those failures traced to host ports already being bound rather than to
 six separate defects. Then `118 passed, 2 skipped in 267.77s`, which was a fully green tier whose two
 remaining skips looked like a tier problem and were the `PATH` gap described in section 3.
+
+## 7b. M1: what the image guarantees, and the one step that needs a registry
+
+The built image runs as a named non-root account, `mlflow` at uid 10001, created in the Dockerfile with
+no login shell. Seven tests in `tests/test_image_contract.py` assert that and three other properties by
+**reading** the Dockerfile rather than by building it, so they run on any machine: the final `USER` is
+not root and is an account the image creates, no base names a moving tag, every `pip install` pins with
+`==` and leaves no wheel cache, and a copied script is not writable by the user that executes it.
+Record 017 argues each, and records why this image is not rebuilt multi-stage from a slim base.
+
+**Digest pinning is the one hardening item still outstanding, and it needs a machine with a registry.**
+Every `image` key and every `FROM` currently names a tag. A tag is a pointer and a digest is the bytes,
+and record 012 already makes the weaker claim that the tags resolve. Resolving the digests takes one
+command on a host that has pulled them:
+
+```powershell
+docker compose --project-directory . -f compose/docker-compose.yml config --images |
+  ForEach-Object { "$_  $(docker image inspect --format '{{index .RepoDigests 0}}' $_)" }
+```
+
+The output is pasted into the `FROM` lines and the compose `image` keys as `name:tag@sha256:...`, and
+the test that *requires* a digest lands in the same commit as the digests. It is deliberately not in the
+suite yet: a test that accepted a bare tag in the meantime would be a gate that passes without looking,
+which is the failure mode this repository has already had once with `lint-imports`.
+
+**What M1 still owes after that:** an SBOM, a vulnerability scan with any exceptions documented, and the
+images in GHCR at those digests. All three need a daemon, a network, and in the last case a credential,
+so all three are build-machine work rather than authoring work.
 
 ## 8. Troubleshooting by symptom
 
