@@ -288,8 +288,14 @@ def test_the_kind_config_publishes_the_ports_an_ingress_needs() -> None:
     assert 80 in published, (
         "the kind cluster publishes no port 80, so an Ingress has nothing listening in front of it"
     )
+    assert 443 in published, (
+        "the kind cluster publishes no port 443, and the controller's manifest binds a hostPort "
+        "for it, so a TLS Ingress would have nothing in front of it"
+    )
     labels = "".join(patch for node in nodes for patch in (node.get("kubeadmConfigPatches") or []))
     assert "ingress-ready=true" in labels, (
-        "no node carries ingress-ready=true, and the ingress-nginx kind manifest schedules onto "
-        "nothing else, so its controller stays Pending and the Ingress appears ignored"
+        "no node carries ingress-ready=true. The pinned controller-v1.15.1 manifest does not "
+        "select on it -- verified by reading that manifest rather than assumed -- so this is "
+        "compatibility with the versions either side, not a requirement of this one. It costs one "
+        "kubelet argument, and removing it couples this config to that pin"
     )

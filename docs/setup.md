@@ -705,10 +705,13 @@ the cluster does not touch them.
 * **`--wait`.** Same reasoning as compose's `--wait` in section 6: a command that returns when objects
   have been *created* tells you nothing. With it, a return means all three Deployments are Available.
 
-**Reaching MLflow.** The kind config publishes the ingress controller on the host's ports 80 and 443
-(`extraPortMappings` in `charts/kind-cluster.yaml`) and labels the single node `ingress-ready=true`,
-which is what ingress-nginx's kind manifest selects on. The chart's Ingress host is
-`mlflow.localtest.me`, a public name that resolves to 127.0.0.1, so a browser needs no hosts-file edit:
+**Reaching MLflow**, which is two mappings that have to line up. The controller's kind manifest binds
+`hostPort` 80 and 443 on the node; `extraPortMappings` in `charts/kind-cluster.yaml` publishes the
+node's 80 and 443 to your machine. Miss either and the Ingress answers nothing. The config also labels
+the node `ingress-ready=true`, which the pinned `controller-v1.15.1` does *not* select on — it selects
+only on `kubernetes.io/os` — so that label is compatibility with the versions either side rather than a
+requirement of this one. The chart's Ingress host is `mlflow.localtest.me`, a public name resolving to
+127.0.0.1, so a browser needs no hosts-file edit:
 
 ```powershell
 curl.exe -H "Host: mlflow.localtest.me" http://127.0.0.1/health

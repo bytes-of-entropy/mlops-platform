@@ -12,9 +12,15 @@ name: mlops-platform
 
 nodes:
   - role: control-plane
-    # ingress-nginx's kind manifest schedules onto a node carrying this label and nothing else does.
-    # Without it the controller pod sits Pending and the Ingress appears to be ignored, which reads as
-    # a chart problem and is not one.
+    # Kept, and no longer load-bearing. `controller-v1.15.1`'s kind manifest selects only on
+    # `kubernetes.io/os: linux` and reaches the host through `hostPort` on 80 and 443; the
+    # `ingress-ready` label it used to require is not in that manifest any more, which was verified by
+    # reading the manifest at the pinned tag rather than assumed from how kind's own guide reads.
+    #
+    # It stays because it costs one kubelet argument, because the label is what several versions either
+    # side of this one do select on, and because a cluster that carries it works with both. Removing it
+    # would make the pin and the config a matched pair that must move together, which is the kind of
+    # coupling the digest pinning in record 018 exists to avoid needing to remember.
     kubeadmConfigPatches:
       - |
         kind: InitConfiguration
