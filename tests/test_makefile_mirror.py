@@ -754,3 +754,36 @@ def test_no_entrypoint_runs_the_whole_suite_except_the_target_that_should() -> N
             f"it on a machine with kind creates a cluster. Delegate to the test arm rather than "
             f"repeating its command"
         )
+
+
+#: Stream redirections that turn a native command's stderr into a thrown error under Windows
+#: PowerShell 5.1. Both wrap each line in an ErrorRecord first, which the script's own
+#: `$ErrorActionPreference = 'Stop'` then throws even for an exe that exited zero.
+POWERSHELL_STDERR_REDIRECTS = ("2>$null", "2>&1", "2>&2")
+
+
+def test_make_ps1_never_redirects_a_native_commands_stderr() -> None:
+    """The trap that killed `kind-deploy` on its first real run, on its very first line.
+
+    `kind get clusters` writes "No kind clusters found." to stderr when a machine has no clusters --
+    the exact input the surrounding `if` was written to handle -- and exits 0. Redirected, that line
+    became an ErrorRecord, the script's Stop preference threw it, and the target failed with a
+    NativeCommandError that reads like kind being broken.
+
+    Asserted by grep rather than by running PowerShell, because this is a laptop-checkable fact and
+    the alternative is discovering it eight minutes into a cluster build. The knowledge already
+    existed in this portfolio, in a comment in the transfer generator, which is what makes an
+    assertion the right home for it rather than a third comment.
+    """
+    lines = (REPO_ROOT / "make.ps1").read_text(encoding="utf-8").splitlines()
+    offenders = [
+        f"{number}: {line.strip()}"
+        for number, line in enumerate(lines, start=1)
+        if not line.lstrip().startswith("#")
+        and any(redirect in line for redirect in POWERSHELL_STDERR_REDIRECTS)
+    ]
+    assert not offenders, (
+        f"make.ps1 redirects a native command's stderr at {offenders}. Under PowerShell 5.1 that "
+        f"wraps each line in an ErrorRecord and throws it under ErrorActionPreference = Stop, even "
+        f"when the command exited zero. Leave stderr alone and let it reach the console"
+    )

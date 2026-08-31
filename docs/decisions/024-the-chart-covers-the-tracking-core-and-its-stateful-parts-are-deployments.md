@@ -176,3 +176,47 @@ here proves it. `OFFLINE_FIRST.md` schedules a paid rehearsal in week -2 precise
 ALB controller and the EBS CSI driver are what kind does not emulate. The chart is written to make that
 day a configuration change; whether it is remains untested, and `Chart.yaml`'s annotation says so where
 a chart repository will show it.
+
+## Prediction scored, 2026-08-31: three of four, and the fourth was never tested
+
+The build machine ran `chart-lint` and the cluster tier for the first time. `kind` and `helm` had to be
+installed first — neither was present, which is why the run before this one reported all five M2 steps
+as NOT RUN and produced no evidence at all.
+
+**Prediction 1 holds, and comfortably.** `helm lint` reported `1 chart(s) linted, 0 chart(s) failed`
+twice, once per values file, and `helm template` rendered without error, first attempt. The only remark
+was `[INFO] Chart.yaml: icon is recommended`. The 56 `.Values` references the contract tier checks were
+the defect most likely to break a render, and there were none left to find.
+
+Worth adding, because it was an open question rather than a prediction: the machine has **Helm 4.2.4**,
+not Helm 3. This chart declares `apiVersion: v2` and Helm 4 linted it, rendered it and installed it
+without complaint. CI is pinned to Helm 3.21.4 on the argument that Helm 4 had never been tried; that
+argument is now spent, and the honest position is that both major versions have installed this chart.
+The pin stays because a version CI uses should be one somebody chose, not the newest thing available.
+
+**Prediction 2 is false, and it is the one I most wanted to be wrong about in this direction.** All
+three Deployments reported Available and stayed Running: `mlops-platform-postgres`, `-minio` and
+`-mlflow`, each 1/1. So `fsGroup: 999` and `fsGroup: 1000` are right for those images, and the uids
+read off each image's conventional account rather than verified turned out to be the correct ones. No
+permission error from `initdb`, no MinIO data-directory refusal. The remedy this record was prepared to
+add — an init container to chown a volume — is not needed and is not being added.
+
+**Prediction 3 holds.** The HPA read `<unknown>` at first: the events carry
+`FailedGetResourceMetric ... no metrics returned from resource metrics API` at 5m21s and
+`did not receive metrics for targeted pods` at 4m21s, and then a metric arrived — the tier's separate
+`test_the_hpa_reads_a_cpu_metric` passed. That is the sequence predicted, and the reason for splitting
+that assertion from the scaling one: a reader sees metrics-server arriving late rather than an
+autoscaler that does not work.
+
+**Prediction 4 is closer to false than true, and the number is worth having.** It guessed pods Ready in
+under two minutes, dominated by Alembic migrations against a cold Postgres. The events show MLflow's
+startup probe failing at 4m51s with `connection refused` and again at 4m45s with
+`context deadline exceeded`, and the install completing around 5m36s before the first assertion. So
+first boot took minutes rather than one, and the `startupProbe`'s 150-second allowance was doing real
+work rather than sitting idle. The guess was in the flattering direction, which is the direction worth
+noticing.
+
+**What the run could not settle.** `make kind-deploy` never installed the chart at all: its PowerShell
+mirror died on its first line, and record 025's scoring covers that. Every fact above therefore comes
+from the cluster tier, which drives kind and helm directly, and not from the documented target. The two
+paths are now known to disagree, which is what `test_cluster_paths.py` exists to stop recurring.

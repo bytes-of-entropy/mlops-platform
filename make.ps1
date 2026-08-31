@@ -265,7 +265,13 @@ switch ($Target) {
         # metrics-server is what an HPA reads; without it the autoscaler reports <unknown> forever,
         # which looks like a broken HPA and is a missing component. --kubelet-insecure-tls is a fact
         # about kind's kubelet certificate, which is why it lives here and not in the chart.
-        $existing = & kind get clusters 2>$null
+        # No `2>$null`, and that is not a style choice. Windows PowerShell 5.1 wraps each stderr line
+        # of a native command in an ErrorRecord when the stream is redirected, which under this
+        # script's `$ErrorActionPreference = 'Stop'` is thrown -- even when the executable exited 0.
+        # `kind get clusters` writes "No kind clusters found." to stderr on a machine with no
+        # clusters, so on the first real run this target died at its first line, on the one input it
+        # was written to handle. Unredirected, that line goes to the console and nothing throws.
+        $existing = & kind get clusters
         if ($existing -notcontains $KindCluster) {
             Invoke-Checked 'kind' @(
                 'create', 'cluster', '--name', $KindCluster,

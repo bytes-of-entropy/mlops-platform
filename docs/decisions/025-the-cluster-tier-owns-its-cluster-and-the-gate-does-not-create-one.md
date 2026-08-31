@@ -129,3 +129,65 @@ The `cluster` marker is the second precondition in this repository that is delib
 `preflight.checks.ORDER`. `make doctor` answers whether this machine can start the compose spine, and
 the spine needs none of kind, kubectl or helm. Widening the doctor to cover the cluster would make it
 refuse on machines where everything it was written to check is fine.
+
+## Prediction scored, 2026-08-31: 1 holds for a reason I did not name, and four defects were mine
+
+First run of the cluster tier. Three of seven assertions passed; the other four failed, and **all four
+failures were defects in this repository rather than in the chart**. The chart installed and ran.
+
+**Prediction 1 holds — the first failure was in setup, not in the chart — but not where I bet.** I had
+narrowed it to the metrics-server JSON patch and then closed that bet by reading the manifest. The real
+failure was one line earlier and in the other entrypoint: `make.ps1`'s `kind-up` ran
+`$existing = & kind get clusters 2>$null`, and on a machine with no clusters `kind` writes
+"No kind clusters found." to stderr and exits 0. Windows PowerShell 5.1 wraps a redirected native
+command's stderr in an ErrorRecord, `$ErrorActionPreference = 'Stop'` throws it, and the target died on
+its first line — on the exact input the `if` beneath it was written to handle.
+
+That trap is documented in this portfolio already, in a comment in the transfer generator, and I wrote
+the redirect anyway. It is now a grep assertion over `make.ps1` rather than a third comment, because
+the knowledge existing somewhere had already been shown not to be enough.
+
+**Prediction 2 is scored and did not fire.** The runner reported `.env line endings: LF`, so the
+`--from-env-file` carriage-return hazard was absent on this machine. The Secret was created correctly
+and Postgres authenticated. The check stays: it costs one line and the failure it watches for is
+indistinguishable from a wrong password.
+
+**Prediction 3 cannot be scored, because the load generator never ran.** The three `loadgen` pods went
+`Error` then `CrashLoopBackOff` and the HPA read `cpu: 0%/70%` for the full 240 seconds. The cause is
+mine and it is useful: the generator's program was assembled with `";".join(...)` around a `def`, and a
+compound statement cannot follow a semicolon. It was a `SyntaxError`, so no pod ever made a request.
+The test then reported that the Deployment "stayed at 1 replica after 240s of load from 3x4 clients" —
+a true sentence about the wrong subject, which is the most expensive kind of test failure there is.
+
+`compile()` on that string costs nothing and runs on a laptop. It is now
+`test_the_load_generator_is_valid_python`. Writing a program as a string and never compiling it is the
+gap; the semicolon is only how it showed up.
+
+Two smaller defects from the same run, both in the tier rather than the chart:
+
+- **The credential check reported a leak that was the release name.** `POSTGRES_DB=platform` is eight
+  characters and a substring of `mlops-platform`, which appears in every label and object name the
+  chart renders. The length filter was meant to prevent coincidental matches and eight was not enough;
+  it now requires the match to stand alone rather than sit inside a longer identifier. **No credential
+  reached the rendered manifest**, which is what the test existed to establish.
+- **The bucket check passed and its assertion failed.** The pod printed `bucket present: mlflow` while
+  the assertion looked for `bucket present: 'mlflow'` — a `!r` in the script template that `print` does
+  not reproduce in its output. Record 015's concern is answered: the initContainer created the bucket
+  and S3 confirmed it from inside the pod that needs it.
+
+**One thing is genuinely unexplained and is not being guessed at.** `/health` returned 200 through the
+Ingress and `/api/2.0/mlflow/experiments/create` returned 503 seconds later. 503 is what nginx returns
+with no ready endpoint *and* what an application can return for itself, and the test recorded only the
+status code, so this run cannot say which sent it. `through_the_ingress` now retries three times over
+ten seconds and reports the body and the `Server` header, because nginx's 503 is an HTML page and
+MLflow's would be JSON. Whether it was a race or a real refusal is what the next run answers.
+
+**Prediction 5 holds.** The Ingress answered `/health` with 200 on the first attempt, routed by the
+`Host` header with no DNS involved, so the controller's `hostPort` and the kind config's
+`extraPortMappings` do line up. The 503 above is a separate question from whether routing works.
+
+**What this says about the tier, which is this record's subject.** Its own cluster was created and
+destroyed cleanly, the port-conflict guard never fired because the operator cluster had been deleted by
+its own step, and every failure arrived with pods, events, deployments and HPA state attached — which
+is why four defects were diagnosable from one results file without a second run. The design decisions
+this record makes held; the code implementing them had four bugs.

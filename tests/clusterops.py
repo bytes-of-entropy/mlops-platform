@@ -56,7 +56,10 @@ LOAD_DEPLOYMENT = "loadgen"
 INTERPRETER = ("python", "-c")
 
 #: What the load generator asks for. A search touches Postgres; `/health` returns a constant.
-LOAD_PATH = "/api/2.0/mlflow/experiments/search?max_results=1000"
+#: MLflow's search is POST-only, so the first version of this -- a GET with a query string -- would
+#: have been answered with 405 out of the router, before anything reached a database.
+LOAD_PATH = "/api/2.0/mlflow/experiments/search"
+LOAD_BODY = {"max_results": 1000}
 
 #: How often to re-ask a cluster a question whose answer it computes on its own schedule.
 POLL_S = 5
@@ -89,6 +92,38 @@ def settings() -> dict[str, str]:
         name, _, value = line.partition("?=")
         found[name.strip()] = value.strip()
     return found
+
+
+def load_script(target: str, port: int, threads: int) -> str:
+    """The load generator's program, as its own function so a test can compile it.
+
+    Joined with newlines rather than semicolons, and that is the whole reason this is not inline any
+    more. The first version was `";".join(...)` with a `def` among the parts, which is a
+    `SyntaxError` -- a compound statement cannot follow a semicolon. Every generator pod crashed on
+    start, the HPA read 0% for four minutes, and the test reported that the autoscaler had not
+    scaled: a true sentence about the wrong subject, costing a build-machine run to learn.
+
+    `compile()` on this string is a laptop-checkable assertion, which is what
+    `test_the_load_generator_is_valid_python` now is.
+    """
+    return "\n".join(
+        (
+            "import json, threading, urllib.request",
+            f"url = 'http://{target}:{port}{LOAD_PATH}'",
+            f"body = json.dumps({LOAD_BODY!r}).encode()",
+            "headers = {'Content-Type': 'application/json'}",
+            "def work():",
+            "    while True:",
+            "        try:",
+            "            request = urllib.request.Request(url, data=body, headers=headers)",
+            "            urllib.request.urlopen(request, timeout=5).read()",
+            "        except Exception:",
+            "            pass",
+            f"threads = [threading.Thread(target=work, daemon=True) for _ in range({threads})]",
+            "[thread.start() for thread in threads]",
+            "[thread.join() for thread in threads]",
+        )
+    )
 
 
 @dataclass(frozen=True)
@@ -362,24 +397,10 @@ class Cluster:
 
         The endpoint is a search rather than `/health`, because `/health` returns a constant and a
         server can answer it out of almost no CPU. A search reaches Postgres through the connection
-        pool, which is the work the request path actually does.
+        pool, which is the work the request path actually does, and MLflow's search is a POST with a
+        JSON body rather than a GET.
         """
-        worker = (
-            "def w():\n"
-            " while True:\n"
-            "  try:urllib.request.urlopen(u,timeout=5).read()\n"
-            "  except Exception:pass"
-        )
-        script = ";".join(
-            (
-                "import threading,urllib.request",
-                f"u='http://{target}:{port}{LOAD_PATH}'",
-                worker,
-                f"ts=[threading.Thread(target=w,daemon=True) for _ in range({threads})]",
-                "[t.start() for t in ts]",
-                "[t.join() for t in ts]",
-            )
-        )
+        script = load_script(target, port, threads)
         tag = settings()["MLFLOW_TAG"]
         self.check(
             "create load generator",

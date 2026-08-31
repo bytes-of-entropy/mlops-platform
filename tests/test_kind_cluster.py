@@ -29,6 +29,8 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import re
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
@@ -60,6 +62,13 @@ INGRESS_ORIGIN = "http://127.0.0.1"
 #: the budget is for metrics-server's own first scrape window, which is the slow part.
 SCALE_DEADLINE_S = 240
 METRIC_DEADLINE_S = 180
+
+#: How many times to ask the Ingress before calling a status code the answer, and how long to
+#: wait between. Three attempts over ten seconds distinguishes a controller that is still
+#: wiring up from an endpoint that is genuinely absent, without turning a real failure into a
+#: two-minute one.
+REQUEST_ATTEMPTS = 3
+REQUEST_BACKOFF_S = 5
 
 #: Three pods, four threads each. Enough to exceed 70% of MLflow's 250m CPU request without being so
 #: much load that the server stops answering and the readiness probe starts failing, which would
@@ -100,6 +109,21 @@ TARGET_UTILISATION: int = MLFLOW["hpa"]["targetCPUUtilizationPercentage"]
 MAX_REPLICAS: int = MLFLOW["hpa"]["maxReplicas"]
 
 
+def appears_alone(value: str, haystack: str) -> bool:
+    """Whether `value` occurs as a whole token rather than inside a longer identifier.
+
+    A plain substring test fails this check on a name. `POSTGRES_DB=platform` is eight characters
+    and a substring of `mlops-platform`, which appears in every label, image reference and object
+    name the chart renders -- so the first version of this test reported a leaked credential on the
+    first real cluster, and the credential was the release name. A leaked secret appears in JSON as
+    its own quoted scalar, so requiring the neighbours not to be identifier characters keeps the
+    check strong while removing that whole class of false positive.
+    """
+    return (
+        re.search(rf"(?<![A-Za-z0-9_-]){re.escape(value)}(?![A-Za-z0-9_-])", haystack) is not None
+    )
+
+
 def through_the_ingress(path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
     """One request to the published port, routed by the Host header rather than by DNS.
 
@@ -107,15 +131,44 @@ def through_the_ingress(path: str, payload: dict[str, Any] | None = None) -> dic
     relying on that would make a name server a dependency of this assertion and turn an offline
     build machine into a failing Ingress test. The header is what nginx routes on, so sending it
     explicitly tests the rule and nothing else.
+
+    Retried, and the retry is not defensive padding. The first real run got 200 from `/health` and
+    503 from the API seconds later, and 503 is what nginx returns when it has no ready endpoint as
+    well as what an application can return for itself. A bounded retry settles whether it was a
+    race; the reported body settles who sent it, because nginx's 503 is an HTML page and MLflow's
+    would be JSON. Neither question was answerable from the first run, which recorded only a status
+    code.
     """
     body = None if payload is None else json.dumps(payload).encode("utf-8")
-    request = urllib.request.Request(  # noqa: S310 - fixed scheme, loopback origin
-        f"{INGRESS_ORIGIN}{path}",
-        data=body,
-        headers={"Host": INGRESS_HOST, "Content-Type": "application/json"},
+    last: dict[str, Any] = {}
+    for attempt in range(REQUEST_ATTEMPTS):
+        request = urllib.request.Request(  # noqa: S310 - fixed scheme, loopback origin
+            f"{INGRESS_ORIGIN}{path}",
+            data=body,
+            headers={"Host": INGRESS_HOST, "Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310
+                return {
+                    "status": response.status,
+                    "body": response.read().decode("utf-8"),
+                    "attempts": attempt + 1,
+                }
+        except urllib.error.HTTPError as error:
+            last = {
+                "status": error.code,
+                # Read from the error, which carries the response body a bare status code discards.
+                "body": error.read().decode("utf-8", errors="replace")[:600],
+                "server": error.headers.get("Server", "unnamed"),
+                "attempts": attempt + 1,
+            }
+        if attempt + 1 < REQUEST_ATTEMPTS:
+            time.sleep(REQUEST_BACKOFF_S)
+    raise AssertionError(
+        f"{path} answered {last.get('status')} on all {REQUEST_ATTEMPTS} attempts. "
+        f"Server header: {last.get('server')!r} -- nginx means no ready endpoint behind the "
+        f"Ingress, anything else means the application answered. Body:\n{last.get('body')}"
     )
-    with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310
-        return {"status": response.status, "body": response.read().decode("utf-8")}
 
 
 @pytest.fixture(scope="module")
@@ -167,9 +220,11 @@ def test_the_rendered_manifest_holds_no_credential(cluster: Cluster) -> None:
         for line in env.splitlines()
         if "=" in line and not line.lstrip().startswith("#")
     }
-    leaked = sorted(value for value in secrets if len(value) >= 8 and value in rendered)
+    leaked = sorted(
+        value for value in secrets if len(value) >= 8 and appears_alone(value, rendered)
+    )
     assert not leaked, (
-        f"{len(leaked)} value(s) from .env appear in the rendered manifest; "
+        f"{len(leaked)} value(s) from .env appear in the rendered manifest ({leaked}); "
         "every credential must reach a container through secretKeyRef"
     )
 
@@ -218,7 +273,7 @@ def test_the_artifact_bucket_exists_because_the_init_container_made_it(cluster: 
     pod checks the claim in the place and with the credentials that matter.
     """
     output = cluster.exec_script(f"{TEST_RELEASE}-mlflow", BUCKET_PRESENT.format(bucket=BUCKET))
-    assert f"bucket present: '{BUCKET}'" in output, output
+    assert f"bucket present: {BUCKET}" in output, output
 
 
 def test_the_hpa_reads_a_cpu_metric(cluster: Cluster) -> None:
