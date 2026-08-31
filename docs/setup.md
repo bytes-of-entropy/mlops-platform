@@ -729,6 +729,13 @@ passes, which is the argument `tests/stackops.py` already makes about compose pr
 eight minutes for cluster setup, paid once for the module rather than per test. `KEEP_TEST_CLUSTER=1`
 leaves it standing if you want to look at it afterwards.
 
+**Only one of the two clusters can exist at a time**, and the reason is host ports rather than
+anything about the design. Both use `charts/kind-cluster.yaml`, which publishes 80 and 443, so the
+second `kind create` to ask for port 80 fails on the bind. Separate names keep the clusters from
+sharing *state*; nothing can make them share a port. Run `make kind-down` before the cluster tier —
+it refuses up front, naming the other cluster, rather than letting kind fail with a bind error that
+reads like a broken config.
+
 Seven assertions, and the weakest of them is the one most charts stop at:
 
 | What it asserts | Why not something simpler |

@@ -146,8 +146,32 @@ class Cluster:
             return False
         return self.name in (listed.stdout or "").split()
 
+    def clusters(self) -> list[str]:
+        try:
+            listed = run(["kind", "get", "clusters"])
+        except (OSError, subprocess.SubprocessError):
+            return []
+        return [name for name in (listed.stdout or "").split() if name != "No"]
+
+    def refuse_a_port_conflict(self) -> None:
+        """One cluster at a time, because the kind config publishes host ports 80 and 443.
+
+        Both this cluster and the one `make kind-up` creates use `charts/kind-cluster.yaml`, and the
+        second `kind create` to ask for port 80 fails on the bind. That failure is real but reads as
+        a broken cluster config rather than as two clusters wanting one port, so it is worth naming
+        here: separate names keep the clusters from sharing *state*, and nothing can make them share
+        a host port.
+        """
+        others = [name for name in self.clusters() if name != self.name]
+        assert not others, (
+            f"another kind cluster is running: {others}. Both it and {self.name} publish host "
+            f"ports 80 and 443 from {KIND_CONFIG}, so the second to start cannot bind them. Run "
+            f"`make kind-down` first — the tier's own cluster is disposable and so is that one."
+        )
+
     def create(self) -> None:
         values = settings()
+        self.refuse_a_port_conflict()
         if not self.exists():
             self.check(
                 "kind create cluster",
