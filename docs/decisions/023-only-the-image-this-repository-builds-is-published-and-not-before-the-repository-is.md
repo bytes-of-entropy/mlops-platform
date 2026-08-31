@@ -135,3 +135,40 @@ whenever the repository goes public, and the digest table above is where its res
 The repository now has a target nobody has run. That is the same position `make up` was in before the
 first build machine existed, and the same answer applies: the tests assert what can be asserted without
 the thing being present, and the record says which parts are claims rather than measurements.
+
+## Correction, 2026-08-30
+
+**The argument above against mirroring the five upstream images is wrong in its main claim, and this
+record should not have carried it.** Two sentences were doing work they cannot support: that copying
+those images "makes this project the publisher of artifacts it did not build", and that digest pins
+give the same property "without asking anyone to trust a copy".
+
+`apache/spark`, `apache/airflow` and `ghcr.io/mlflow/mlflow` are Apache-2.0; `postgres` carries the
+PostgreSQL licence. Redistribution is explicitly permitted, and mirroring public images is ordinary
+practice rather than a liberty — pull-through caches, Harbor, Artifactory and ECR all exist to do it. A
+mirror at `ghcr.io/<owner>/…` claims authorship no more than a Debian mirror does. The framing was
+about propriety, and propriety was never the issue.
+
+**What survives is narrower and technical.** `docker pull` then `docker tag` then `docker push`
+re-compresses layers and produces a *different digest*. A mirror built that way silently breaks record
+018's invariant: the digest pinned in compose is not the digest the mirror serves, so the property that
+record exists to guarantee — the same bytes everywhere — would be quietly lost by the act meant to
+protect it. Preserving a digest means copying the manifest, with `crane copy` or `skopeo copy`, not
+re-pushing an image. That is an argument about *how* to mirror, and the original text did not make it.
+
+**And the case for mirroring was under-weighted.** Record 012 exists because an upstream publisher
+moved its whole catalogue and deleted the originals. Deletion insurance is precisely what a mirror
+buys, and dismissing it in one sentence ignored the failure this repository already has scar tissue
+from. Registry rate limits are a second real reason. Neither is hypothetical.
+
+**One image would need its own licence analysis rather than a blanket answer.** MinIO's server is
+AGPL-3.0. Redistribution is permitted, but the AGPL attaches source-provision obligations on
+distribution that Apache-2.0 does not, so "it is open source" is not sufficient reasoning for that one.
+
+**The decision does not change, and its grounds do.** Only `mlops-platform/mlflow` is pushed, because
+that is the image this repository builds and the one M1 asked about. Mirroring the other five is a
+legitimate and possibly valuable *separate* capability, whose cost is a digest-preserving copy tool,
+a per-image licence pass, and a decision about whether a reviewer should pull the spine from this
+account or from upstream. It belongs in its own record, argued on availability, with
+`docs/OFFLINE_FIRST.md` as the place the requirement would come from — not dismissed here on grounds
+that do not hold.

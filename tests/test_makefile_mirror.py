@@ -357,11 +357,14 @@ def test_both_entrypoints_publish_the_same_image_to_the_same_place() -> None:
 
 
 def test_push_publishes_the_built_image_and_nothing_else() -> None:
-    """The failure worth a test: republishing somebody else's image under this account.
+    """Only the image this repository builds is published, and the reason is a digest.
 
-    Five of the six images in the spine belong to other people. Copying them here would put
-    artifacts this project did not make, and cannot vouch for, under a name implying it did -- and
-    would make the spine depend on a mirror of a mirror. Only the image built here is pushed.
+    Not propriety: those five images are Apache-2.0 or equivalent and mirroring public images is
+    ordinary practice, which record 023 corrects itself on. The reason is that `docker tag` then
+    `docker push` re-compresses layers and yields a *different* digest, so a mirror built that way
+    would break record 018's invariant with the act meant to protect it -- the digest pinned in
+    compose would not be the digest served. A real mirror copies manifests, with a tool this
+    repository does not have and does not need for a milestone about its own image.
     """
     upstream = ("apache/", "minio/", "postgres:", "ghcr.io/mlflow/", "anchore/")
     for name in ("Makefile", "make.ps1"):
