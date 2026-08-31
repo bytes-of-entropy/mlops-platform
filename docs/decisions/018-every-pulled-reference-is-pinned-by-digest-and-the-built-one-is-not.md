@@ -103,3 +103,29 @@ which is a feature, because the disagreement is exactly the review question.
 What this does not do is make the images trustworthy; it makes them *identical*. A pinned digest of a
 vulnerable image is a reliably vulnerable image, and the scan that would say so is the M1 item still
 outstanding.
+
+## Extended, 2026-08-31: the rule reaches CI actions, which it should have from the start
+
+This record has been about images since it was written, and the reasoning was never about images. It is
+about pulled third-party code and a publisher's ability to move a pointer after review. Ten `uses:` lines
+in `.github/workflows/` rode floating major tags — `actions/checkout@v4`, `azure/setup-helm@v4` — which
+is the same arrangement this record rejects for `postgres:16.15-alpine`, and the case for pinning them is
+*stronger* rather than weaker: a workflow action runs on the runner with the job's token and can read
+whatever the job can, while a base image runs inside a container this repository configures.
+
+All ten are now pinned to a commit SHA with the version in a trailing comment. The comment is not
+decoration — a bare forty-character hex string tells a reader nothing about how old the pin is, and a
+bump has to be legible in review. Three assertions in `tests/test_toolchain_pins.py` hold it: every
+`uses:` resolves to a commit, every pin carries a version comment, and there are at least four actions to
+check at all, because a rule that matches nothing passes.
+
+**Two things this cost, both worth saying.** The four actions were also several majors behind — checkout
+and setup-python at v4 and v5 against a current v7 — so pinning meant choosing a version rather than
+inheriting one, and each was bumped to its current release after checking that the inputs actually passed
+(`python-version`, `name`, `path`, `version`) are still the documented ones.
+
+And this was found by asking whether the pins resolved at all, prompted by a narrower worry: **CI has
+never run.** No remote exists, so not one of these workflows has ever executed, and a wrong action
+reference would have failed the first push rather than anything before it. That is still true of
+everything else in those files. Pinning removes one class of first-run failure; it does not make the
+workflows tested, and `PUBLISH.md` says to read the Actions tab on the first push for exactly that reason.

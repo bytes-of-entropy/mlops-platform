@@ -95,3 +95,60 @@ def test_the_interpreter_running_this_suite_has_the_pinned_ruff() -> None:
         f"pyproject pins ruff {expected}, this environment has {installed}. "
         f"Re-run the setup target to reinstall the dev extra"
     )
+
+
+#: A commit SHA is 40 hex characters. A tag -- `v4`, `v7.0.1` -- is a pointer its publisher can
+#: move, which is the same objection record 018 makes to an image tag.
+ACTION_SHA = re.compile(r"^uses:\s+[\w.-]+/[\w.-]+@[0-9a-f]{40}\s*(#.*)?$")
+
+WORKFLOW_DIR = REPO_ROOT / ".github" / "workflows"
+
+
+def workflow_uses() -> list[tuple[str, int, str]]:
+    """Every `uses:` line in every workflow, with its file and line number."""
+    found = []
+    for path in sorted(WORKFLOW_DIR.glob("*.yml")):
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            # A step is a list item, so most of these read `- uses: ...`. Dropping the marker is
+            # what makes the pattern below match; the first version of this found one line in ten.
+            stripped = line.strip().removeprefix("- ").strip()
+            if stripped.startswith("uses:"):
+                found.append((path.name, number, stripped))
+    return found
+
+
+def test_there_are_workflow_actions_to_check() -> None:
+    """The anti-vacuity guard: this rule is worthless against zero actions."""
+    assert len(workflow_uses()) >= 4, "no workflow actions found, so the pin rule proves nothing"
+
+
+def test_every_workflow_action_is_pinned_to_a_commit() -> None:
+    """Record 018's rule, applied to the other third-party code this repository pulls.
+
+    An action is not a passive dependency. It runs on the runner with the workflow's token and can
+    read anything the job can, so `@v4` is a promise by a publisher that code behind a moving tag
+    will stay trustworthy -- exactly the promise record 018 declines to accept from a registry. The
+    argument does not weaken because the artefact is JavaScript rather than a layer.
+
+    The version stays in a trailing comment, because a bare SHA tells a reader nothing about how old
+    it is and a bump has to be legible in review.
+    """
+    unpinned = [
+        f"{name}:{number}: {line}"
+        for name, number, line in workflow_uses()
+        if not ACTION_SHA.match(line)
+    ]
+    assert not unpinned, (
+        f"{len(unpinned)} action(s) ride a tag rather than a commit: {unpinned}. A tag is a "
+        f"pointer its publisher can move, and an action runs with the job's credentials"
+    )
+
+
+def test_every_pinned_action_says_which_version_it_is() -> None:
+    """A forty-character hex string with no comment is unreviewable and unbumpable."""
+    without = [
+        f"{name}:{number}"
+        for name, number, line in workflow_uses()
+        if "#" not in line or not line.split("#", 1)[1].strip()
+    ]
+    assert not without, f"pinned action(s) with no version comment: {without}"
