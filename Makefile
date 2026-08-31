@@ -57,7 +57,26 @@ GHCR_OWNER      ?= bytes-of-entropy
 GHCR_IMAGE      ?= ghcr.io/$(GHCR_OWNER)/mlops-platform/mlflow
 MLFLOW_TAG      ?= 2.22.4
 
-.PHONY: help setup test lint fmt hooks check doctor build push sbom scan-report scan scan-accept up up-quickstart down clean reset ps logs config
+# The cluster the chart is developed against, and the three things kind does not bring with it.
+#
+# Pinned like everything else here, and for the reason record 020 spells out: a version chosen from
+# memory rather than from a registry is how the scanner ended up two schema retirements behind. These
+# four came from the projects' own release metadata.
+#
+# The node image is the one kind v0.33.0 publishes as its default. It is pinned *with* its digest
+# because the node image and the kind binary are a matched pair -- a newer kind expects a newer node --
+# so this is the pin to move when the kind version moves, and not before.
+KIND_CLUSTER    ?= mlops-platform
+KIND_CONFIG     ?= charts/kind-cluster.yaml
+KIND_NODE_IMAGE ?= kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+METRICS_SERVER  ?= v0.9.0
+INGRESS_NGINX   ?= controller-v1.15.1
+
+CHART           ?= charts/mlops-platform
+RELEASE         ?= mlops-platform
+K8S_NAMESPACE   ?= mlops
+
+.PHONY: help setup test lint fmt hooks check doctor build push sbom scan-report scan scan-accept chart-lint kind-up kind-deploy kind-down up up-quickstart down clean reset ps logs config
 
 help:
 	@echo "setup           create .venv and install dev dependencies"
@@ -72,6 +91,10 @@ help:
 	@echo "scan-report      scan every SBOM and print what was found, gating on nothing"
 	@echo "scan            the same scan, failing on an advisory not in the baseline"
 	@echo "scan-accept     rewrite the baselines from the current scan, as a diff to review"
+	@echo "chart-lint      lint and render the chart, without a cluster"
+	@echo "kind-up         create the kind cluster, with metrics-server and an ingress"
+	@echo "kind-deploy     kind-up, then install the chart and wait for it"
+	@echo "kind-down       delete the kind cluster"
 	@echo "up              start the full spine (all services)"
 	@echo "up-quickstart   start the 4 GB / 2 CPU reviewer profile"
 	@echo "down            stop and remove containers, KEEP volumes"
@@ -220,6 +243,71 @@ push: build
 	@echo ''
 	@echo 'pushed, at this digest -- record it against the commit, see docs/decisions/023:'
 	@docker image inspect --format '{{index .RepoDigests 0}}' $(GHCR_IMAGE):$(MLFLOW_TAG)
+
+# Everything about the chart that does not need a cluster. `helm lint` reads the chart; `helm template`
+# renders it and is the stronger check of the two, because lint accepts a template that renders to
+# nothing. The rendered output goes to a file so a reader can look at what was actually produced.
+#
+# The contract tier asserts far more than this about the chart and needs no helm at all, which is why
+# it runs on every machine and this runs where helm is.
+chart-lint:
+	helm lint $(CHART)
+	helm lint $(CHART) --values $(CHART)/values-quickstart.yaml
+	@mkdir -p .rendered
+	helm template $(RELEASE) $(CHART) > .rendered/$(RELEASE).yaml
+	@echo "rendered to .rendered/$(RELEASE).yaml"
+
+# The cluster, plus the two things kind does not ship that this chart needs.
+#
+# metrics-server is what an HPA reads. Without it the autoscaler reports <unknown> forever, which looks
+# like a broken HPA and is a missing component. `--kubelet-insecure-tls` is needed because kind's
+# kubelet serving certificate is not signed by a CA the cluster trusts; it is a fact about kind, which
+# is why it is here and not in the chart, and it is exactly what EKS does not need.
+#
+# ingress-nginx answers the Ingress. Its kind-specific manifest schedules onto the node labelled
+# ingress-ready=true, which $(KIND_CONFIG) sets.
+kind-up:
+	@kind get clusters 2>/dev/null | grep -qx "$(KIND_CLUSTER)" || \
+	  kind create cluster --name $(KIND_CLUSTER) --config $(KIND_CONFIG) \
+	    --image $(KIND_NODE_IMAGE)
+	kubectl --context kind-$(KIND_CLUSTER) apply -f \
+	  https://github.com/kubernetes-sigs/metrics-server/releases/download/$(METRICS_SERVER)/components.yaml
+	kubectl --context kind-$(KIND_CLUSTER) -n kube-system patch deployment metrics-server \
+	  --type=json -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+	kubectl --context kind-$(KIND_CLUSTER) apply -f \
+	  https://raw.githubusercontent.com/kubernetes/ingress-nginx/$(INGRESS_NGINX)/deploy/static/provider/kind/deploy.yaml
+	kubectl --context kind-$(KIND_CLUSTER) -n ingress-nginx wait --for=condition=available \
+	  deployment/ingress-nginx-controller --timeout=300s
+	kubectl --context kind-$(KIND_CLUSTER) -n kube-system wait --for=condition=available \
+	  deployment/metrics-server --timeout=300s
+
+# The chart, on that cluster.
+#
+# `kind load` is not optional: the one image built here exists only in the local daemon, and a kind
+# node is a separate container with its own image store that cannot pull `mlops-platform/mlflow` from
+# anywhere. Without this the pod sits in ImagePullBackOff naming an image that `docker images` shows.
+#
+# The Secret is created from `.env`, the same file compose reads, and never from the chart. `--from-env-file`
+# rather than repeated `--from-literal` so no credential reaches the command line, where it would be
+# visible in the process table and in shell history. `--dry-run=client | apply` so re-running is safe.
+kind-deploy: kind-up build
+	@test -f .env || \
+	  { echo ".env is missing; section 4 of docs/setup.md says how to write one"; exit 1; }
+	kind load docker-image --name $(KIND_CLUSTER) mlops-platform/mlflow:$(MLFLOW_TAG)
+	kubectl --context kind-$(KIND_CLUSTER) create namespace $(K8S_NAMESPACE) \
+	  --dry-run=client -o yaml | kubectl --context kind-$(KIND_CLUSTER) apply -f -
+	kubectl --context kind-$(KIND_CLUSTER) -n $(K8S_NAMESPACE) create secret generic \
+	  mlops-platform-credentials --from-env-file=.env \
+	  --dry-run=client -o yaml | kubectl --context kind-$(KIND_CLUSTER) apply -f -
+	helm --kube-context kind-$(KIND_CLUSTER) upgrade --install $(RELEASE) $(CHART) \
+	  --namespace $(K8S_NAMESPACE) --wait --timeout $(WAIT_TIMEOUT)s
+	kubectl --context kind-$(KIND_CLUSTER) -n $(K8S_NAMESPACE) get pods
+
+# Deletes the cluster and everything in it, which is the whole point: a kind cluster is disposable and
+# nothing in it is state anybody should keep. The compose spine's volumes are the ones that matter and
+# this does not touch them.
+kind-down:
+	kind delete cluster --name $(KIND_CLUSTER)
 
 up: doctor
 	$(COMPOSE) --profile full up -d --build --wait --wait-timeout $(WAIT_TIMEOUT)

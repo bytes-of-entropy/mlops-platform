@@ -35,6 +35,17 @@ $GrypeDbVolume = 'mlops-platform-grype-db'
 $GhcrOwner = 'bytes-of-entropy'
 $GhcrImage = "ghcr.io/$GhcrOwner/mlops-platform/mlflow"
 $MlflowTag = '2.22.4'
+# Kept in step with the Makefile's KIND_*, METRICS_SERVER, INGRESS_NGINX, CHART, RELEASE and
+# K8S_NAMESPACE; a test fails if they diverge. All four versions came from the projects' own release
+# metadata rather than from memory, which is the mistake record 020 exists about.
+$KindCluster = 'mlops-platform'
+$KindConfig = 'charts/kind-cluster.yaml'
+$KindNodeImage = 'kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5'
+$MetricsServer = 'v0.9.0'
+$IngressNginx = 'controller-v1.15.1'
+$Chart = 'charts/mlops-platform'
+$Release = 'mlops-platform'
+$K8sNamespace = 'mlops'
 # Mirrors the Makefile's `?=`. Kept as four separate overrides after the defaults rather than folded
 # into them, so the line a reader looks at to learn the pinned version is still a plain assignment.
 if ($env:SYFT) { $Syft = $env:SYFT }
@@ -112,6 +123,10 @@ switch ($Target) {
         Write-Output 'scan-report      scan every SBOM and print what was found, gating on nothing'
         Write-Output 'scan            the same scan, failing on an advisory not in the baseline'
         Write-Output 'scan-accept     rewrite the baselines from the current scan, as a diff to review'
+        Write-Output 'chart-lint      lint and render the chart, without a cluster'
+        Write-Output 'kind-up         create the kind cluster, with metrics-server and an ingress'
+        Write-Output 'kind-deploy     kind-up, then install the chart and wait for it'
+        Write-Output 'kind-down       delete the kind cluster'
         Write-Output 'up              start the full spine (all services)'
         Write-Output 'up-quickstart   start the 4 GB / 2 CPU reviewer profile'
         Write-Output 'down            stop and remove containers, KEEP volumes'
@@ -227,6 +242,91 @@ switch ($Target) {
             )
         }
         Write-Output "review the diff in $SbomDir/*.known.txt before committing it"
+    }
+    'chart-lint' {
+        # `helm template` is the stronger of the two: lint accepts a chart that renders to nothing.
+        Invoke-Checked 'helm' @('lint', $Chart)
+        Invoke-Checked 'helm' @('lint', $Chart, '--values', "$Chart/values-quickstart.yaml")
+        New-Item -ItemType Directory -Force '.rendered' | Out-Null
+        & helm template $Release $Chart |
+            Set-Content -Encoding utf8 ".rendered/$Release.yaml"
+        if ($LASTEXITCODE -ne 0) { throw 'helm template failed' }
+        Write-Output "rendered to .rendered/$Release.yaml"
+    }
+    'kind-up' {
+        # metrics-server is what an HPA reads; without it the autoscaler reports <unknown> forever,
+        # which looks like a broken HPA and is a missing component. --kubelet-insecure-tls is a fact
+        # about kind's kubelet certificate, which is why it lives here and not in the chart.
+        $existing = & kind get clusters 2>$null
+        if ($existing -notcontains $KindCluster) {
+            Invoke-Checked 'kind' @(
+                'create', 'cluster', '--name', $KindCluster,
+                '--config', $KindConfig, '--image', $KindNodeImage
+            )
+        }
+        $context = "kind-$KindCluster"
+        Invoke-Checked 'kubectl' @(
+            '--context', $context, 'apply', '-f',
+            "https://github.com/kubernetes-sigs/metrics-server/releases/download/$MetricsServer/components.yaml"
+        )
+        $patch = '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+        Invoke-Checked 'kubectl' @(
+            '--context', $context, '-n', 'kube-system', 'patch', 'deployment', 'metrics-server',
+            '--type=json', '-p', $patch
+        )
+        Invoke-Checked 'kubectl' @(
+            '--context', $context, 'apply', '-f',
+            "https://raw.githubusercontent.com/kubernetes/ingress-nginx/$IngressNginx/deploy/static/provider/kind/deploy.yaml"
+        )
+        foreach ($wait in @(
+            @('-n', 'ingress-nginx', 'deployment/ingress-nginx-controller'),
+            @('-n', 'kube-system', 'deployment/metrics-server')
+        )) {
+            Invoke-Checked 'kubectl' (@('--context', $context) + $wait[0..1] + @(
+                'wait', '--for=condition=available', $wait[2], '--timeout=300s'
+            ))
+        }
+    }
+    'kind-deploy' {
+        & $PSCommandPath 'kind-up'
+        if ($LASTEXITCODE -ne 0) { throw 'kind-up failed' }
+        & $PSCommandPath 'build'
+        if ($LASTEXITCODE -ne 0) { throw 'build failed' }
+        if (-not (Test-Path '.env')) {
+            throw '.env is missing; section 4 of docs/setup.md says how to write one'
+        }
+        $context = "kind-$KindCluster"
+        # Not optional: the one image built here exists only in the local daemon, and a kind node is a
+        # separate container with its own image store that cannot pull it from anywhere.
+        Invoke-Checked 'kind' @(
+            'load', 'docker-image', '--name', $KindCluster, "mlops-platform/mlflow:$MlflowTag"
+        )
+        # Delete-then-create rather than the Makefile's `--dry-run=client -o yaml | kubectl apply`.
+        # Same effect, deliberately different mechanism: piping YAML through PowerShell puts an
+        # encoding decision between kubectl and kubectl, and this project has already lost bytes that
+        # way. --ignore-not-found makes both halves safe to re-run.
+        foreach ($kind in @('namespace', 'secret')) {
+            $target = if ($kind -eq 'namespace') { $K8sNamespace } else { 'mlops-platform-credentials' }
+            $scope = if ($kind -eq 'namespace') { @() } else { @('-n', $K8sNamespace) }
+            & kubectl @('--context', $context) @scope @('delete', $kind, $target, '--ignore-not-found') | Out-Null
+        }
+        Invoke-Checked 'kubectl' @('--context', $context, 'create', 'namespace', $K8sNamespace)
+        # --from-env-file, never --from-literal: a literal puts the credential in the command line,
+        # where it reaches the process table and the shell history.
+        Invoke-Checked 'kubectl' @(
+            '--context', $context, '-n', $K8sNamespace, 'create', 'secret', 'generic',
+            'mlops-platform-credentials', '--from-env-file=.env'
+        )
+        Invoke-Checked 'helm' @(
+            '--kube-context', $context, 'upgrade', '--install', $Release, $Chart,
+            '--namespace', $K8sNamespace, '--wait', '--timeout', "${WaitTimeout}s"
+        )
+        Invoke-Checked 'kubectl' @('--context', $context, '-n', $K8sNamespace, 'get', 'pods')
+    }
+    'kind-down' {
+        # A kind cluster is disposable and nothing in it is state worth keeping. The compose spine's
+        # volumes are the ones that matter and this does not touch them.
+        Invoke-Checked 'kind' @('delete', 'cluster', '--name', $KindCluster)
     }
     'up' {
         Invoke-Checked $Py @('-m', 'preflight')

@@ -52,12 +52,22 @@ MAKE_TIMEOUT = re.compile(r"^WAIT_TIMEOUT\s*:=\s*(\d+)$", re.MULTILINE)
 PS_TIMEOUT = re.compile(r"^\$WaitTimeout\s*=\s*'(\d+)'$", re.MULTILINE)
 
 
-def test_no_wait_is_left_unbounded() -> None:
-    """``--wait`` with no ``--wait-timeout`` waits forever.
+#: The flags that bound a wait. Two, because two tools here wait and they spell it differently:
+#: compose takes `--wait-timeout`, helm takes `--timeout`. The property is that a wait is bounded,
+#: and
+#: this list is what knowing a second tool cost -- it was one entry until the chart arrived.
+BOUNDING_FLAGS = ("--wait-timeout", "--timeout")
 
-    A service that never reports healthy then hangs the job until something outside this
-    repository kills it, and whatever kills it takes the compose logs with it, so the one
-    artefact that would have said which service failed is the one that goes missing.
+
+def test_no_wait_is_left_unbounded() -> None:
+    """A ``--wait`` with nothing bounding it waits forever.
+
+    Something that never reports healthy then hangs the job until an outside force kills it, and
+    whatever kills it takes the logs with it, so the one artefact that would have said what failed
+    is
+    the one that goes missing. True of `compose up --wait` and of `helm upgrade --wait` alike, which
+    is
+    why the flag list has two entries rather than one.
     """
     for name in ("Makefile", "make.ps1"):
         text = (REPO_ROOT / name).read_text(encoding="utf-8")
@@ -66,7 +76,9 @@ def test_no_wait_is_left_unbounded() -> None:
             if line.lstrip().startswith("#"):
                 continue
             if WAIT_WITHOUT_TIMEOUT.search(line):
-                assert "--wait-timeout" in line, f"{name}: unbounded --wait: {line.strip()}"
+                assert any(flag in line for flag in BOUNDING_FLAGS), (
+                    f"{name}: unbounded --wait: {line.strip()}"
+                )
 
 
 def test_both_entrypoints_wait_the_same_length_of_time() -> None:
@@ -416,6 +428,124 @@ def test_the_built_image_declares_where_it_came_from() -> None:
     assert "org.opencontainers.image.source" in dockerfile, (
         "the built image declares no source, so a published package cannot link to this repository"
     )
+
+
+#: The cluster and chart settings, in each entrypoint's own syntax. Same reason as the cataloguer
+#: pins: two entrypoints naming two node images, or two namespaces, is one of them deploying
+#: somewhere
+#: nobody is looking at.
+CLUSTER_PINS = {
+    "Makefile": re.compile(
+        r"^(?P<name>KIND_CLUSTER|KIND_CONFIG|KIND_NODE_IMAGE|METRICS_SERVER|INGRESS_NGINX|CHART"
+        r"|RELEASE|K8S_NAMESPACE)\s*\?=\s*(?P<value>\S+)$",
+        re.MULTILINE,
+    ),
+    "make.ps1": re.compile(
+        r"^\$(?P<name>KindCluster|KindConfig|KindNodeImage|MetricsServer|IngressNginx|Chart"
+        r"|Release|K8sNamespace)\s*=\s*'(?P<value>[^']+)'$",
+        re.MULTILINE,
+    ),
+}
+
+CLUSTER_ALIASES = {
+    "KindCluster": "KIND_CLUSTER",
+    "KindConfig": "KIND_CONFIG",
+    "KindNodeImage": "KIND_NODE_IMAGE",
+    "MetricsServer": "METRICS_SERVER",
+    "IngressNginx": "INGRESS_NGINX",
+    "Chart": "CHART",
+    "Release": "RELEASE",
+    "K8sNamespace": "K8S_NAMESPACE",
+}
+
+
+def cluster_settings(name: str) -> dict[str, str]:
+    text = (REPO_ROOT / name).read_text(encoding="utf-8")
+    return {
+        CLUSTER_ALIASES.get(match.group("name"), match.group("name")): match.group("value")
+        for match in CLUSTER_PINS[name].finditer(text)
+    }
+
+
+def test_both_entrypoints_target_the_same_cluster_with_the_same_add_ons() -> None:
+    """Two node images or two namespaces means one entrypoint deploys where nobody is looking.
+
+    The node image matters most: it and the kind binary are a matched pair, so an entrypoint pinning
+    a
+    different one produces a cluster whose API server version differs from the other's, and a
+    manifest
+    that applies on one machine can be rejected on the other.
+    """
+    makefile = cluster_settings("Makefile")
+    powershell = cluster_settings("make.ps1")
+    expected = set(CLUSTER_ALIASES.values())
+    assert set(makefile) == expected, f"the Makefile is missing: {sorted(expected - set(makefile))}"
+    assert set(powershell) == expected, f"make.ps1 is missing: {sorted(expected - set(powershell))}"
+    differing = {
+        key: (makefile[key], powershell[key])
+        for key in expected
+        if makefile[key] != powershell[key]
+    }
+    assert not differing, f"the two entrypoints disagree (Makefile, make.ps1): {differing}"
+
+
+def test_the_kind_node_image_is_pinned_by_digest() -> None:
+    """A node image is where the cluster's Kubernetes version comes from.
+
+    Unpinned, `kind create` follows whatever the installed kind defaults to, so the cluster the
+    chart
+    was tested against and the one a reviewer gets are different clusters. Pinned by digest as well
+    as
+    tag, for the reason record 018 gives about every other image here.
+    """
+    image = cluster_settings("Makefile")["KIND_NODE_IMAGE"]
+    assert "@sha256:" in image, f"the kind node image is not digest-pinned: {image}"
+    assert image.startswith("kindest/node:v"), f"unexpected node image: {image}"
+
+
+def test_the_cluster_add_ons_are_pinned_to_a_release() -> None:
+    """A manifest fetched from a moving ref is a cluster whose contents change without a commit."""
+    settings = cluster_settings("Makefile")
+    for key in ("METRICS_SERVER", "INGRESS_NGINX"):
+        value = settings[key]
+        assert value not in {"latest", "main", "master"}, f"{key} rides {value!r}"
+        assert any(char.isdigit() for char in value), f"{key} names no version: {value!r}"
+
+
+def test_kind_deploy_loads_the_locally_built_image() -> None:
+    """A kind node has its own image store and cannot pull an image that exists only locally.
+
+    Without `kind load` the MLflow pod sits in ImagePullBackOff naming an image `docker images`
+    shows
+    on the very same machine, which is among the more confusing failures kind produces.
+    """
+    for name in ("Makefile", "make.ps1"):
+        text = (REPO_ROOT / name).read_text(encoding="utf-8")
+        pattern = (
+            r"^kind-deploy:.*?(?=^\S)" if name == "Makefile" else r"^    'kind-deploy' \{.*?^    \}"
+        )
+        body = re.search(pattern, text, re.MULTILINE | re.DOTALL)
+        assert body, f"{name} has no kind-deploy target"
+        assert "load" in body.group(0) and "docker-image" in body.group(0), (
+            f"{name}'s kind-deploy does not load the built image into the cluster, so the pod will "
+            f"fail to pull an image that exists on the same machine"
+        )
+
+
+def test_the_chart_secret_is_never_built_from_a_literal() -> None:
+    """`--from-literal` puts the credential in the command line, and so in the process table.
+
+    `--from-env-file` reads the same `.env` compose reads and puts nothing in argv. Asserted because
+    the literal form is the one every tutorial shows.
+    """
+    for name in ("Makefile", "make.ps1"):
+        text = (REPO_ROOT / name).read_text(encoding="utf-8")
+        offending = [
+            line.strip()
+            for line in text.splitlines()
+            if "--from-literal" in line and not line.strip().startswith("#")
+        ]
+        assert not offending, f"{name} builds a Secret from a literal: {offending}"
 
 
 #: An environment override, in each entrypoint's own syntax.
