@@ -739,21 +739,28 @@ sharing *state*; nothing can make them share a port. Run `make kind-down` before
 it refuses up front, naming the other cluster, rather than letting kind fail with a bind error that
 reads like a broken config.
 
-Seven assertions, and the weakest of them is the one most charts stop at:
+Seven assertions, and the weakest of them is the one most charts stop at. The State column is from the
+first real run, on 2026-08-31, and is here rather than in a changelog because a reader deciding whether
+to trust this chart wants to know which of these has actually happened:
 
-| What it asserts | Why not something simpler |
-| --- | --- |
-| all three Deployments report Available | the floor, and the same condition `--wait` waits on |
-| the rendered manifest contains no value from your `.env` | the contract tier can only check that no *template* holds a literal; this renders the chart with real values and looks for each one |
-| the Ingress answers `/health` from outside the cluster | a ClusterIP that answers proves only the pod, not the Ingress rule, the class matching a controller, or kind's port mapping |
-| creating an experiment writes through to Postgres, and searching finds it | `/health` answers out of the process and says nothing about the database |
-| the artifact bucket exists, asked of S3 from inside the pod | record 015's defect: a configured artifact root whose bucket nothing created survived a green M0 |
-| the HPA reports a CPU number rather than `<unknown>` | named separately so a metrics-server failure does not read as a load generator that is not working |
-| the replica count rises above one under load from three pods | the milestone's last criterion, and the evidence that the chart's CPU *requests* are real |
+| What it asserts | State | Why not something simpler |
+| --- | --- | --- |
+| all three Deployments report Available | **passed** | the floor, and the same condition `--wait` waits on |
+| the rendered manifest contains no value from your `.env` | **no leak, assertion was wrong** | the contract tier can only check that no *template* holds a literal; this renders with real values. It matched `platform` inside `mlops-platform` and reported the release name as a secret, so it now requires a whole-token match |
+| the Ingress answers `/health` from outside the cluster | **passed** | a ClusterIP that answers proves only the pod, not the Ingress rule, the class matching a controller, or kind's port mapping |
+| creating an experiment writes through to Postgres, and searching finds it | **503, unexplained** | `/health` answers out of the process and says nothing about the database. It now asks MLflow's ClusterIP from inside the cluster first, so a repeat names the Ingress or MLflow rather than leaving both possible |
+| the artifact bucket exists, asked of S3 from inside the pod | **bucket exists; assertion was wrong** | record 015's defect: a configured artifact root whose bucket nothing created survived a green M0. The pod printed `bucket present: mlflow` and the assertion looked for quotes `print` does not emit |
+| the HPA reports a CPU number rather than `<unknown>` | **passed** | named separately so a metrics-server failure does not read as a load generator that is not working — which is exactly what happened, and the split is why it was legible |
+| the replica count rises above one under load from three pods | **never exercised** | the milestone's last criterion, and the evidence that the chart's CPU *requests* are real. The generator was invalid Python, so no load was ever produced; `compile()` on it is now a contract test |
 
 That last pair is why the chart sets requests and the compose files do not. HPA utilisation is a
 percentage of a container's request, not of its limit and not of the node, so a workload with a limit
 and no request gives the autoscaler nothing to divide by and it reads `<unknown>` for ever.
+
+**Which helm you have matters less than it might.** The chart declares `apiVersion: v2`, CI pins Helm
+**3.21.4**, and the build machine ran **4.2.4** — which linted, rendered and installed it without
+complaint. So both current majors are known to work. The CI pin stays because a version a gate runs on
+should be one somebody chose rather than whatever was newest that morning.
 
 **What is not demonstrated anywhere.** EKS. The chart is written to be portable — nothing kind-specific
 is in a template, the ingress class and every image come from values, and `--kubelet-insecure-tls` lives
@@ -1042,6 +1049,30 @@ controller and matches no rule, which is a 404 from nginx rather than a broken d
 `--context kind-<cluster>` explicitly, for exactly this reason: a `current-context` left pointing
 somewhere else is how a manifest gets applied to a cluster nobody meant. If you are running commands by
 hand, pass the context too.
+
+### `kind-deploy` fails immediately with `NativeCommandError` and `No kind clusters found.`
+
+This one has happened, and the message is the opposite of what it looks like. `kind get clusters` writes
+"No kind clusters found." to **stderr** and exits 0. Windows PowerShell 5.1 wraps a redirected native
+command's stderr in an ErrorRecord, and `make.ps1` sets `$ErrorActionPreference = 'Stop'`, so the line
+became a thrown error and the target died on its first statement — on the exact input the surrounding
+`if` was written to handle.
+
+Fixed by not redirecting: `& kind get clusters` with no `2>$null`, so the line goes to the console and
+nothing throws. If you see this shape again anywhere in `make.ps1`, look for a stream redirect on a
+native command before looking at the command. A test now greps for them.
+
+### The `loadgen` pods are in `CrashLoopBackOff` and the HPA reads `0%`
+
+`kubectl -n mlops-tests logs -l app=loadgen`. The generator is a Python program built as a string and
+run inside a pod, so a syntax error in it presents as a crashing pod and an autoscaler with nothing to
+react to — and the test then reports that the Deployment did not scale, which is true and about the
+wrong subject.
+
+That happened once: the program was assembled with semicolons around a `def`, which is a `SyntaxError`.
+`tests/test_cluster_paths.py` now compiles the program on every run of the contract tier, so the same
+class fails on a laptop. If these pods crash again, read their logs before reading anything about the
+HPA — a generator that is not running makes every HPA assertion below it meaningless.
 
 ### `mlops-platform-tests` is still listed by `kind get clusters`
 
