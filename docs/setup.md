@@ -671,6 +671,93 @@ major lines (021), a gate on advisory identity that has passed (022), and the pu
 as it can be without a registry, and waiting on the repository it publishes alongside (023).
 
 
+## 7c. M2: the chart, on a kind cluster
+
+Everything above this line runs on Docker Compose, and everything below it runs on Kubernetes. They are
+two ways to start the same three services, not a migration: compose stays the local spine, and the chart
+exists because the flagship repositories deploy onto a cluster and need a versioned release to pin.
+
+**Four targets, in the order you would run them.**
+
+```powershell
+./make.ps1 chart-lint    # helm lint plus a real render; needs helm, no cluster
+./make.ps1 kind-up       # create the cluster, install metrics-server and ingress-nginx
+./make.ps1 kind-deploy   # kind-up + build + kind load + the Secret + helm upgrade --install --wait
+./make.ps1 kind-down     # delete the cluster and everything in it
+```
+
+`kind-deploy` depends on `kind-up` and `build`, so the middle two are one command in practice. It is
+`kind-down` that is worth knowing separately: a kind cluster is disposable and nothing in it is state
+anyone should keep, which is the opposite of the compose volumes section 6 is careful about. Deleting
+the cluster does not touch them.
+
+**Three things `kind-deploy` does that are not obvious, and each is load-bearing.**
+
+* **`kind load docker-image`.** The one image this repository builds exists only in the local Docker
+  daemon. A kind node is a separate container with its own image store and cannot pull
+  `mlops-platform/mlflow` from anywhere, so without this the pod sits in `ImagePullBackOff` naming an
+  image `docker images` will happily show you.
+* **The Secret comes from `.env`, not from the chart.** `kubectl create secret generic
+  --from-env-file=.env` — the same file compose reads, one file, no second copy of a credential.
+  `--from-env-file` rather than repeated `--from-literal` because a literal on a command line is
+  visible in the process table and in shell history. The chart's `values.yaml` names the Secret and its
+  keys and holds no value.
+* **`--wait`.** Same reasoning as compose's `--wait` in section 6: a command that returns when objects
+  have been *created* tells you nothing. With it, a return means all three Deployments are Available.
+
+**Reaching MLflow.** The kind config publishes the ingress controller on the host's ports 80 and 443
+(`extraPortMappings` in `charts/kind-cluster.yaml`) and labels the single node `ingress-ready=true`,
+which is what ingress-nginx's kind manifest selects on. The chart's Ingress host is
+`mlflow.localtest.me`, a public name that resolves to 127.0.0.1, so a browser needs no hosts-file edit:
+
+```powershell
+curl.exe -H "Host: mlflow.localtest.me" http://127.0.0.1/health
+```
+
+The header is there because it is what nginx routes on, and sending it explicitly means the check does
+not depend on a name server answering.
+
+### The cluster tier
+
+`tests/test_kind_cluster.py` is a third tier, marked `cluster` as well as `integration`, and it is the
+only part of this repository that creates a Kubernetes cluster. Select it with `-m cluster`; the compose
+tier is `-m "integration and not cluster"`, which is what CI runs.
+
+It creates its own cluster, `mlops-platform-tests`, installs the chart, and destroys it again. Not the
+cluster `kind-up` makes: a cluster left running by hand must not be able to decide whether the suite
+passes, which is the argument `tests/stackops.py` already makes about compose projects. Budget about
+eight minutes for cluster setup, paid once for the module rather than per test. `KEEP_TEST_CLUSTER=1`
+leaves it standing if you want to look at it afterwards.
+
+Seven assertions, and the weakest of them is the one most charts stop at:
+
+| What it asserts | Why not something simpler |
+| --- | --- |
+| all three Deployments report Available | the floor, and the same condition `--wait` waits on |
+| the rendered manifest contains no value from your `.env` | the contract tier can only check that no *template* holds a literal; this renders the chart with real values and looks for each one |
+| the Ingress answers `/health` from outside the cluster | a ClusterIP that answers proves only the pod, not the Ingress rule, the class matching a controller, or kind's port mapping |
+| creating an experiment writes through to Postgres, and searching finds it | `/health` answers out of the process and says nothing about the database |
+| the artifact bucket exists, asked of S3 from inside the pod | record 015's defect: a configured artifact root whose bucket nothing created survived a green M0 |
+| the HPA reports a CPU number rather than `<unknown>` | named separately so a metrics-server failure does not read as a load generator that is not working |
+| the replica count rises above one under load from three pods | the milestone's last criterion, and the evidence that the chart's CPU *requests* are real |
+
+That last pair is why the chart sets requests and the compose files do not. HPA utilisation is a
+percentage of a container's request, not of its limit and not of the node, so a workload with a limit
+and no request gives the autoscaler nothing to divide by and it reads `<unknown>` for ever.
+
+**What is not demonstrated anywhere.** EKS. The chart is written to be portable — nothing kind-specific
+is in a template, the ingress class and every image come from values, and `--kubelet-insecure-tls` lives
+in `kind-up` where it belongs — but portability is a claim the structure supports and nothing here
+proves. It stays a claim until the paid rehearsal in `OFFLINE_FIRST.md`. Record 024 says so rather than
+implying the chart is cloud-tested.
+
+**Spark and Airflow are not in the chart**, and that is a decision rather than an omission. A plain
+Deployment actively misrepresents how either runs on Kubernetes: Spark wants `spark-submit --master
+k8s://` or an operator, and Airflow's own chart is thousands of lines. Every M2 criterion is
+demonstrable on the tracking core, which is a real workload rather than infrastructure with nothing
+running on it. Record 024 argues it.
+
+
 ## 8. Troubleshooting by symptom
 
 Every entry below is either something that has actually happened here or a precondition something
@@ -915,6 +1002,44 @@ belonging to a project it does not name.
 Read it as the memory arithmetic in section 3 before reading it as a broken service. The full profile
 declares about 21 GB of ceilings, 14 of them the two Spark workers, and those are ceilings rather than
 reservations. Raising the allocation is a `.wslconfig` change on the host, not a repository change.
+
+### A pod is in `ImagePullBackOff` naming an image `docker images` lists
+
+`kind load docker-image --name <cluster> mlops-platform/mlflow:<tag>`. The node has its own image store
+and the local daemon's tags mean nothing to it. `kind-deploy` does this; a `helm upgrade` run by hand
+after a rebuild does not, so the node keeps serving the image it was loaded with. Reload after every
+rebuild, or the cluster runs the previous build and nothing says so.
+
+### The HPA shows `<unknown>/70%` and never scales
+
+`kubectl -n <namespace> get deploy metrics-server -n kube-system`. On kind, metrics-server needs
+`--kubelet-insecure-tls` because the kubelet serves a certificate it will not otherwise accept;
+`kind-up` patches that in and waits for the Deployment. An HPA with no metrics source reads `<unknown>`
+for ever and scales nothing, and from the outside that is indistinguishable from load that never
+arrived — which is why the cluster tier asserts the metric separately from the scaling.
+
+### The Ingress returns 404 or does not answer at all
+
+`kubectl get ingressclass`. Three separate causes, in the order worth checking: the controller is not
+installed (`kind-up` installs it and waits), the chart's `ingressClassName` names a class no controller
+provides, or the request carried no `Host` header matching the rule. The chart's class is `nginx` and
+its host is `mlflow.localtest.me`; a request to `http://127.0.0.1/health` with neither reaches the
+controller and matches no rule, which is a 404 from nginx rather than a broken deployment.
+
+### `kubectl` cannot reach the cluster, or reaches the wrong one
+
+`kubectl config get-contexts`. Every command in `kind-up`, `kind-deploy` and the cluster tier passes
+`--context kind-<cluster>` explicitly, for exactly this reason: a `current-context` left pointing
+somewhere else is how a manifest gets applied to a cluster nobody meant. If you are running commands by
+hand, pass the context too.
+
+### `mlops-platform-tests` is still listed by `kind get clusters`
+
+`kind delete cluster --name mlops-platform-tests`. The cluster tier destroys its own cluster in a
+`finally`, so this means either the run was interrupted or `KEEP_TEST_CLUSTER` was set. It is safe to
+delete and safe to leave — the tier reuses a cluster of that name if it finds one — but a kept cluster
+running an older chart is state that can decide the next run, which is what the separate name exists to
+prevent. Delete it.
 
 ## 9. After the gate is green: the deferred version bumps
 

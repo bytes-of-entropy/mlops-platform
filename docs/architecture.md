@@ -42,7 +42,35 @@ Drawn before the code it describes, which is the point of drawing it.
 - **Health gating, not start gating.** Every `depends_on` waits for `service_healthy`, which is why
   `up --wait` returning means the stack is usable rather than merely created.
 
+## The same spine, on Kubernetes
+
+`charts/mlops-platform` installs MLflow, Postgres and MinIO onto a cluster. It is a second way to start
+three of the services above, not a replacement for the first: compose stays the local spine, and the
+chart exists because the flagship repositories deploy onto a cluster and need a versioned release to
+pin rather than a moving target.
+
+- **Three components, not seven.** Spark and Airflow are deliberately absent. A plain `Deployment`
+  misrepresents how either runs here — Spark wants `spark-submit --master k8s://` or an operator,
+  Airflow's own chart is thousands of lines — and every criterion this milestone sets is demonstrable
+  on the tracking core, which is a real workload rather than infrastructure with nothing running on it.
+- **Postgres and MinIO are Deployments with `strategy: Recreate` and a PVC**, which is right for one
+  replica and wrong for production. A StatefulSet buys ordinal identity and stable per-replica storage,
+  and at one replica there is nothing to identify or to keep stable. `docs/decisions/024` says both
+  halves of that plainly.
+- **The chart holds no credential.** `values.yaml` names a Secret and its keys; the Secret is created
+  from the same `.env` compose reads. MLflow's connection string is assembled at container start from
+  `$(VAR)` references, which is Kubernetes' own substitution rather than Helm's, so the rendered
+  manifest carries the literal `$(POSTGRES_PASSWORD)` and the value never enters a manifest at all.
+- **The bucket is an initContainer, not a `post-install` hook.** A hook Job runs once per release and is
+  absent on every reschedule; an initContainer re-checks before each pod's own container starts and
+  blocks exactly the thing that needs it. `docs/decisions/015` is why that distinction is not academic.
+- **The chart sets CPU requests, which the compose files do not.** HPA utilisation is a percentage of a
+  container's request, so a workload with a limit and no request gives the autoscaler nothing to divide
+  by. This is the one place the two spines genuinely differ in what they declare.
+- **Nothing kind-specific is in a template.** The ingress class, every image and all resource numbers
+  come from values, and `--kubelet-insecure-tls` lives in the cluster-setup target where it belongs.
+  Portability to EKS is a claim this structure supports and nothing in this repository proves.
+
 ## What is not here yet
 
-Images (M1), Helm charts (M2), Terraform (M3). Registry, drift and canary are deferred; see
-`docs/decisions/001`.
+Terraform (M3). Registry, drift and canary are deferred; see `docs/decisions/001`.

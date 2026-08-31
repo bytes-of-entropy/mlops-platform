@@ -4,26 +4,40 @@ The local-first platform the two flagship repositories deploy onto: a Spark clus
 object storage, an MLflow tracking server, a scheduler and a metadata database, all reproducible on
 one machine, and the Kubernetes and Terraform footprint they run on in the cloud.
 
-**Status: M0 closed, tagged `v0.1.0`; the tier has since been strengthened and is green again at
-`v0.1.2`.** The integration tier runs end to end on a real machine: `120 passed, 0 skipped` at the commit
-that closed M0, and `124 passed, 0 skipped` at `v0.1.2`, the eight tests that start actual stacks included.
-The four added tests are there because the first green tier passed over a real defect, and two of them walk
-the artifact path that tier never touched. The compose spine, its contract
-suite, a preflight that refuses a start which would come up healthy and wrong, and a smoke DAG that crosses
-the spine and is asserted at both ends, in MLflow and in Postgres, are all in and all demonstrated rather
-than asserted.
-The stack has now been started for the first time, on the build machine, and that first start found
-two defects nothing here could have caught by reading. Both were claims about what is *inside* a
-pinned image ([`docs/decisions/011`](docs/decisions/011-what-is-inside-an-image-is-a-claim.md)). Both
-are fixed and neither is fixed by a rule that only reads the compose file. The first run of the
-integration tier then found a third, this one in a test rather than in the stack: fixing the second had
-silently moved a supply-chain check off the pin it was there to watch
-([`docs/decisions/012`](docs/decisions/012-a-built-tag-is-not-a-registry-fact.md)). M0 closes when the
-integration tier is green end to end, which it now is. Hardened images (M1: multi-stage, non-root,
-an SBOM and a scan step in CI), then Helm charts (M2) and Terraform (M3), are next; the one image built here is
-the minimum that lets M0 start, not the beginning of that work. Model registry, drift detection and
-canary rollout are deliberately deferred; see
-[`docs/decisions/001`](docs/decisions/001-defer-registry-drift-canary.md).
+**Status: M0 closed at `v0.1.0`, M1 closed at `v0.2.0`. M2's chart is written and has never been
+installed.** Two claims here are demonstrated and one is not, and the difference is the point of this
+paragraph.
+
+**Demonstrated.** The compose spine, its contract suite, a preflight that refuses a start which would
+come up healthy and wrong, and a smoke DAG that crosses the spine and is asserted at both ends, in
+MLflow and in Postgres. The integration tier runs end to end on a real machine — `120 passed, 0 skipped`
+at the commit that closed M0, `124 passed, 0 skipped` at `v0.1.2` — with the tests that start actual
+stacks included. Three defects were found by running it rather than by reading it: two were claims about
+what is *inside* a pinned image ([`011`](docs/decisions/011-what-is-inside-an-image-is-a-claim.md)) and
+the third was in a test, where fixing the second had silently moved a supply-chain check off the pin it
+existed to watch ([`012`](docs/decisions/012-a-built-tag-is-not-a-registry-fact.md)). Neither class is
+catchable by a rule that only reads the compose file.
+
+**Demonstrated, M1.** The built image runs as a named non-root account and is audited statically
+([`017`](docs/decisions/017-the-image-runs-as-a-named-non-root-user-and-the-dockerfile-is-audited-statically.md)); every pulled reference carries a tag
+and a digest ([`018`](docs/decisions/018-every-pulled-reference-is-pinned-by-digest-and-the-built-one-is-not.md)); each image has a
+committed, reproducible package inventory ([`019`](docs/decisions/019-the-committed-artifact-is-a-package-inventory-and-every-scan-exception-expires.md));
+the scanner works and carries an expiry, because its usefulness is a database that must be fresh
+([`020`](docs/decisions/020-a-scanner-pin-carries-an-expiry-because-its-data-retires-before-the-tool-does.md)); bases are current within
+their major lines, which cut findings by roughly a third
+([`021`](docs/decisions/021-the-answer-to-five-thousand-findings-is-a-version-bump-not-a-page-of-exceptions.md)); and the gate fails on an
+advisory *identity* absent from a committed baseline rather than on a severity
+([`022`](docs/decisions/022-the-gate-is-on-advisory-identity-because-severity-cannot-move.md)). One item is sequenced rather
+than done: the GHCR push is built and tested as far as a registry-less machine allows, and waits on the
+repository it publishes alongside ([`023`](docs/decisions/023-only-the-image-this-repository-builds-is-published-and-not-before-the-repository-is.md)).
+
+**Not demonstrated.** M2's Helm chart — MLflow, Postgres and MinIO, with probes, PVCs, an Ingress and an
+HPA — is written, and its 49 contract-tier assertions pass on a machine with no cluster on it. That is
+the weaker half of the claim by construction: those tests parse the chart, and whether `helm install`
+works is not something parsing can settle. The cluster tier that installs it on kind
+(`tests/test_kind_cluster.py`) has never run. Until it does, treat the chart as reviewed and unexercised.
+Terraform (M3) has not started. Model registry, drift detection and canary rollout are deliberately
+deferred; see [`docs/decisions/001`](docs/decisions/001-defer-registry-drift-canary.md).
 
 **One honest limit, because a reviewer will otherwise ask it first.** Of the services the spine
 starts, the two Spark workers are healthy and **idle**: no job has ever been submitted to this
