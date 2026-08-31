@@ -29,6 +29,12 @@ $Syft = 'anchore/syft:v1.51.1@sha256:95fe0835e5bebc6f8b1f8acef68d47d63d594ef4c0f
 $Grype = 'anchore/grype:v0.118.0@sha256:8a93fc48da96bd6ec5981279d099b69de11541dc68fdf222fb9161f8ff284af7'
 $SbomDir = 'sbom'
 $GrypeDbVolume = 'mlops-platform-grype-db'
+# Kept in step with the Makefile's GHCR_OWNER, GHCR_IMAGE and MLFLOW_TAG; a test fails if they
+# diverge, because two entrypoints pushing to two places is one of them publishing somewhere nobody
+# is looking.
+$GhcrOwner = 'bytes-of-entropy'
+$GhcrImage = "ghcr.io/$GhcrOwner/mlops-platform/mlflow"
+$MlflowTag = '2.22.4'
 # Mirrors the Makefile's `?=`. Kept as four separate overrides after the defaults rather than folded
 # into them, so the line a reader looks at to learn the pinned version is still a plain assignment.
 if ($env:SYFT) { $Syft = $env:SYFT }
@@ -101,6 +107,7 @@ switch ($Target) {
         Write-Output 'check           everything the gate requires: lint, hooks, test'
         Write-Output 'doctor          check the machine can start the stack, and say what is wrong'
         Write-Output 'build           build the one image in the spine, without starting anything'
+        Write-Output 'push            push that one image to ghcr.io, and nothing else'
         Write-Output 'sbom            catalogue every image and write the reviewable inventories'
         Write-Output 'scan-report      scan every SBOM and print what was found, gating on nothing'
         Write-Output 'scan            the same scan, failing on an advisory not in the baseline'
@@ -142,6 +149,23 @@ switch ($Target) {
     # something that would come up healthy and wrong. A test asserts this branch runs it.
     'doctor' { Invoke-Checked $Py @('-m', 'preflight') }
     'build' { Invoke-Checked 'docker' ($Compose + @('--profile', 'full', 'build')) }
+    'push' {
+        # Pushes exactly one image: the one this repository builds. The other five belong to somebody
+        # else, and copying them under this account would republish artifacts this project did not
+        # make and cannot vouch for.
+        #
+        # Login is deliberately not handled here: a credential belongs in the operator's session and
+        # never in a file this repository could read.
+        & $PSCommandPath 'build'
+        if ($LASTEXITCODE -ne 0) { throw 'build failed' }
+        $local = "mlops-platform/mlflow:$MlflowTag"
+        $remote = "${GhcrImage}:$MlflowTag"
+        Invoke-Checked 'docker' @('tag', $local, $remote)
+        Invoke-Checked 'docker' @('push', $remote)
+        Write-Output ''
+        Write-Output 'pushed, at this digest -- record it against the commit, see docs/decisions/023:'
+        Invoke-Checked 'docker' @('image', 'inspect', '--format', '{{index .RepoDigests 0}}', $remote)
+    }
     'sbom' {
         # Mirrors the Makefile target, including the bind mount: the SPDX document is written by the
         # cataloguer straight into $SbomDir rather than piped through PowerShell, which would have to

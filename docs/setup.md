@@ -104,7 +104,7 @@ broken repository rather than like a wrong location:
 
 **On that last row, because it costs a confusing half hour otherwise.** Git for Windows already ships all
 three, in `usr\bin` beside the installation, but PowerShell does not have that directory on `PATH`, so a run
-from PowerShell skips those twenty-two tests and reports `249 passed, 35 skipped` with everything else green. Add it
+from PowerShell skips those twenty-three tests and reports `254 passed, 36 skipped` with everything else green. Add it
 for the session and they run:
 
 ```powershell
@@ -381,9 +381,9 @@ otherwise.
 | `ruff format --check .` | `64 files already formatted`: 37 Python and 28 Markdown, less `.pytest_cache/README.md`, which is ignored by git and therefore by the formatter. The committed inventories and advisory baselines are neither, so the formatter never reads them |
 | `mypy` | `Success: no issues found in 35 source files` |
 | `pre-commit run --all-files` | 8 lines, each `Passed`; no summary line |
-| `pytest`, no runtime | `271 passed, 13 skipped` |
-| `pytest`, runtime but no credentials | `276 passed, 8 skipped`, derived rather than measured |
-| `pytest`, runtime and credentials | `284 passed, 0 skipped`, derived. The previous derivation of this row, `271 passed, 0 skipped`, was measured on the build machine on 2026-08-30 and matched exactly |
+| `pytest`, no runtime | `277 passed, 13 skipped` |
+| `pytest`, runtime but no credentials | `282 passed, 8 skipped`, derived rather than measured |
+| `pytest`, runtime and credentials | `290 passed, 0 skipped`, derived. This row has been derived here and then measured on the build machine six times running, most recently at `284 passed, 0 skipped` |
 | `docker images mlops-platform/mlflow` | one row, tag `2.22.4`, after `build` |
 | `make doctor` | three checks (`container runtime`, `credentials`, `postgres volume`), each `OK`, except that the volume check reports it cannot verify a volume created before the fingerprint existed |
 
@@ -411,10 +411,10 @@ committed-inventory check had no files to run against; committing the inventorie
 assertions.
 
 **Every row above assumes `sh`, `sha256sum` and `od` are reachable.** Without them, subtract
-twenty-two from the passed count and add twenty-two to the skipped count in each row: two preflight tests
-execute the Postgres init script, and twenty parse the Makefile's recipes with `sh -n`, and all of them
+twenty-three from the passed count and add twenty-three to the skipped count in each row: two preflight
+tests execute the Postgres init script, and twenty-one parse the Makefile's recipes with `sh -n`, and all
 are gated on a POSIX shell rather than on a runtime, so no amount of Docker unskips them. Measured, not
-derived: `249 passed, 35 skipped` on the authoring machine with `sh`, `sha256sum` and `od` taken off
+derived: `254 passed, 36 skipped` on the authoring machine with `sh`, `sha256sum` and `od` taken off
 `PATH`.
 
 **The tier reached the pass condition on the build machine twice**: `120 passed, 0 skipped` at the commit tagged `v0.1.0`, and `124 passed, 0 skipped` at `v0.1.2`, after `docs/decisions/015` added two artifact-store tests and two compose-contract tests. The second run is the stronger evidence: the first passed while a configured artifact root pointed at a bucket nothing created, because no test then walked that path. Two earlier runs are
@@ -630,8 +630,45 @@ parse, the comparison runs on both entrypoints, and the asymmetries behave. The 
 first one where a database update lands between two scans, and record 022 predicts that within three
 months.
 
-**What M1 still owes:** the images in GHCR at their digests. That needs a credential and a decision about
-publishing, so it is the one remaining item that is not simply an unrun command.
+### Publishing the built image
+
+`make push` retags `mlops-platform/mlflow:2.22.4` as `ghcr.io/<owner>/mlops-platform/mlflow:2.22.4`,
+pushes it, and prints the resulting digest. `GHCR_OWNER` sets the owner; it is the one value here that
+belongs to a person rather than to the project.
+
+**One image, not six.** M1's checklist says "images in GHCR" and the plural is wrong: five of the six
+images in the spine belong to other people, and copying them under this account would republish
+artifacts this project did not make and cannot vouch for, while making the spine a mirror of a mirror.
+A test asserts the push target names no upstream image.
+
+Three properties the tests hold, none of which needs a registry to check:
+
+* **`push` depends on `build`.** Pushing a tag no build produced is the one way this target can publish
+  something other than what it claims, and a stale tag would be undetectable afterwards, because a
+  digest is only ever compared against itself.
+* **It handles no credential.** A login belongs in your session. `docker login` inside a target needs a
+  token from somewhere, and the somewhere is a file this repository could read.
+* **The image declares its source.** `org.opencontainers.image.source` is what a registry reads to
+  attach a published package to its repository; without it a pushed image is an artifact under an
+  account with nothing tying it to what produced it.
+
+**It has not run, and it is sequenced rather than pending.** No git remote exists in this repository yet,
+and `REPO_ROADMAPS.md` publishes R3 after **M2**. So the milestone asking for published images comes
+before the one that publishes the repository. Pushing now would create a package whose `source` label
+names a URL that 404s, landing private and unlinked, needing its visibility set by hand and then redone.
+Record 023 argues that and keeps a table of pushed digests against their commits, which is what ties a
+published image to the source that made it — the labels stop short of a `revision`, because putting a
+commit in one means making `make build` read git state that an extracted tarball does not have.
+
+When the repository publishes, the push is one command. Log in with a token scoped to `write:packages`
+and nothing else — piped from your session, never written to a file — then `make push`, and record the
+digest it prints in record 023's table.
+
+**M1 closes here.** Every item is either done and measured, or sequenced with a reason: non-root and
+statically audited (017), every pulled reference digest-pinned (018), an SBOM per image with a committed
+and reproducible inventory (019), a scanner that works and expires (020), bases current within their
+major lines (021), a gate on advisory identity that has passed (022), and the push built, tested as far
+as it can be without a registry, and waiting on the repository it publishes alongside (023).
 
 
 ## 8. Troubleshooting by symptom

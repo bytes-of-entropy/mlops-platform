@@ -295,6 +295,126 @@ def test_the_scan_reads_the_sbom_rather_than_the_image() -> None:
         )
 
 
+#: The publishing settings, in each entrypoint's own syntax. Compared by value: two entrypoints
+#: pushing to two places is one of them publishing somewhere nobody is looking.
+PUBLISH_PINS = {
+    "Makefile": re.compile(
+        r"^(?P<name>GHCR_OWNER|GHCR_IMAGE|MLFLOW_TAG)\s*\?=\s*(?P<value>\S+)$", re.MULTILINE
+    ),
+    "make.ps1": re.compile(
+        r"^\$(?P<name>GhcrOwner|GhcrImage|MlflowTag)\s*=\s*[\"'](?P<value>[^\"']+)[\"']$",
+        re.MULTILINE,
+    ),
+}
+
+PUBLISH_ALIASES = {
+    "GhcrOwner": "GHCR_OWNER",
+    "GhcrImage": "GHCR_IMAGE",
+    "MlflowTag": "MLFLOW_TAG",
+}
+
+
+def publish_settings(name: str) -> dict[str, str]:
+    text = (REPO_ROOT / name).read_text(encoding="utf-8")
+    found = PUBLISH_PINS[name].finditer(text)
+    return {
+        PUBLISH_ALIASES.get(match.group("name"), match.group("name")): match.group("value")
+        for match in found
+    }
+
+
+def push_body(name: str) -> str:
+    flags = re.MULTILINE | re.DOTALL
+    text = (REPO_ROOT / name).read_text(encoding="utf-8")
+    pattern = r"^push:.*?(?=^\S)" if name == "Makefile" else r"^    'push' \{.*?^    \}"
+    body = re.search(pattern, text, flags)
+    assert body, f"{name} has no push target"
+    return body.group(0)
+
+
+def test_both_entrypoints_publish_the_same_image_to_the_same_place() -> None:
+    """Two destinations would mean one of them is the one nobody checks.
+
+    Compared after normalising the owner out of the image path, because the Makefile builds
+    `GHCR_IMAGE` from `GHCR_OWNER` and make.ps1 interpolates it, so the literal strings differ by a
+    variable reference while the value does not.
+    """
+    makefile = publish_settings("Makefile")
+    powershell = publish_settings("make.ps1")
+    expected = {"GHCR_OWNER", "GHCR_IMAGE", "MLFLOW_TAG"}
+    assert set(makefile) == expected, f"the Makefile is missing: {sorted(expected - set(makefile))}"
+    assert set(powershell) == expected, f"make.ps1 is missing: {sorted(expected - set(powershell))}"
+
+    assert makefile["GHCR_OWNER"] == powershell["GHCR_OWNER"]
+    assert makefile["MLFLOW_TAG"] == powershell["MLFLOW_TAG"]
+
+    owner = makefile["GHCR_OWNER"]
+    resolved = {
+        makefile["GHCR_IMAGE"].replace("$(GHCR_OWNER)", owner),
+        powershell["GHCR_IMAGE"].replace("$GhcrOwner", owner),
+    }
+    assert len(resolved) == 1, f"the two entrypoints push to different places: {sorted(resolved)}"
+
+
+def test_push_publishes_the_built_image_and_nothing_else() -> None:
+    """The failure worth a test: republishing somebody else's image under this account.
+
+    Five of the six images in the spine belong to other people. Copying them here would put
+    artifacts this project did not make, and cannot vouch for, under a name implying it did -- and
+    would make the spine depend on a mirror of a mirror. Only the image built here is pushed.
+    """
+    upstream = ("apache/", "minio/", "postgres:", "ghcr.io/mlflow/", "anchore/")
+    for name in ("Makefile", "make.ps1"):
+        body = push_body(name)
+        offending = [
+            line.strip()
+            for line in body.splitlines()
+            if not line.strip().startswith("#") and any(reference in line for reference in upstream)
+        ]
+        assert not offending, f"{name}'s push mentions an upstream image: {offending}"
+        assert "mlops-platform/mlflow" in body, f"{name}'s push does not name the built image"
+
+
+def test_push_depends_on_build_rather_than_hoping_for_it() -> None:
+    """Pushing a tag no build produced is the one way this target can publish something else.
+
+    A stale tag left from an earlier version of the Dockerfile would push happily and be wrong in a
+    way nothing downstream could detect, since a digest is only ever compared against itself.
+    """
+    makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+    declared = re.search(r"^push:\s*(.*)$", makefile, re.MULTILINE)
+    assert declared, "the Makefile has no push target"
+    assert "build" in declared.group(1).split(), (
+        f"make push does not depend on build: {declared.group(1)!r}"
+    )
+    assert "build" in push_body("make.ps1"), "make.ps1's push does not build first"
+
+
+def test_push_does_not_handle_a_credential() -> None:
+    """A login belongs in the operator's session, never in something this repository can read.
+
+    Asserted rather than trusted, because a `docker login` in a target is the natural next thing
+    somebody adds when a push fails anonymously, and the token then has to come from somewhere.
+    """
+    for name in ("Makefile", "make.ps1"):
+        body = push_body(name)
+        for forbidden in ("docker login", "--password", "GITHUB_TOKEN", "GHCR_TOKEN", "CR_PAT"):
+            assert forbidden not in body, f"{name}'s push handles a credential: {forbidden}"
+
+
+def test_the_built_image_declares_where_it_came_from() -> None:
+    """The label a registry reads to attach a published package to its repository.
+
+    Without it a pushed image is an artifact under an account with nothing tying it to the source
+    that produced it, and the visibility that should follow the repository has to be set by hand.
+    Worth a test because it is invisible in normal use: nothing about running the spine cares.
+    """
+    dockerfile = (REPO_ROOT / "images/mlflow/Dockerfile").read_text(encoding="utf-8")
+    assert "org.opencontainers.image.source" in dockerfile, (
+        "the built image declares no source, so a published package cannot link to this repository"
+    )
+
+
 #: An environment override, in each entrypoint's own syntax.
 MAKE_OVERRIDABLE = re.compile(r"^(?P<name>SYFT|GRYPE|SBOM_DIR|GRYPE_DB_VOLUME)\s*\?=", re.MULTILINE)
 PS_OVERRIDABLE = re.compile(

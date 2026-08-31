@@ -50,7 +50,14 @@ GRYPE           ?= anchore/grype:v0.118.0@sha256:8a93fc48da96bd6ec5981279d099b69
 SBOM_DIR        ?= sbom
 GRYPE_DB_VOLUME ?= mlops-platform-grype-db
 
-.PHONY: help setup test lint fmt hooks check doctor build sbom scan-report scan scan-accept up up-quickstart down clean reset ps logs config
+# Where a published image goes. The owner is a variable because it is the one value here that belongs
+# to a person rather than to the project, and the path is nested under the repository name so a reader
+# of `ghcr.io/<owner>/mlops-platform/mlflow` can tell which repository produced it.
+GHCR_OWNER      ?= bytes-of-entropy
+GHCR_IMAGE      ?= ghcr.io/$(GHCR_OWNER)/mlops-platform/mlflow
+MLFLOW_TAG      ?= 2.22.4
+
+.PHONY: help setup test lint fmt hooks check doctor build push sbom scan-report scan scan-accept up up-quickstart down clean reset ps logs config
 
 help:
 	@echo "setup           create .venv and install dev dependencies"
@@ -60,6 +67,7 @@ help:
 	@echo "check           everything the gate requires: lint, hooks, test"
 	@echo "doctor          check the machine can start the stack, and say what is wrong"
 	@echo "build           build the one image in the spine, without starting anything"
+	@echo "push            push that one image to $(GHCR_IMAGE), and nothing else"
 	@echo "sbom            catalogue every image and write the reviewable inventories"
 	@echo "scan-report      scan every SBOM and print what was found, gating on nothing"
 	@echo "scan            the same scan, failing on an advisory not in the baseline"
@@ -192,6 +200,26 @@ scan-accept: sbom scan-report
 	    "$(SBOM_DIR)/$$name.known.txt" "$(SBOM_DIR)/$$name.findings.json" || exit 1; \
 	done
 	@echo "review the diff in $(SBOM_DIR)/*.known.txt before committing it"
+
+# Pushes exactly one image: the one this repository builds. The other five are somebody else's, and
+# copying them under this account would republish artifacts this project did not make and cannot
+# vouch for -- while also making the spine depend on a mirror of a mirror.
+#
+# `build` first, declared rather than assumed, because pushing a tag no build produced is the one way
+# this target can publish something other than what it claims. Login is deliberately not handled here:
+# a credential belongs in the operator's session, never in a file this repository could read, and
+# `docker push` failing on an anonymous session is a clear enough message.
+#
+# The digest is printed afterwards because that is the thing worth recording. A tag says what to pull
+# and a digest says what arrived, and record 023 keeps them together with the commit.
+push: build
+	@docker image inspect mlops-platform/mlflow:$(MLFLOW_TAG) >/dev/null 2>&1 || \
+	  { echo "mlops-platform/mlflow:$(MLFLOW_TAG) is not built; run 'make build'"; exit 1; }
+	docker tag mlops-platform/mlflow:$(MLFLOW_TAG) $(GHCR_IMAGE):$(MLFLOW_TAG)
+	docker push $(GHCR_IMAGE):$(MLFLOW_TAG)
+	@echo ''
+	@echo 'pushed, at this digest -- record it against the commit, see docs/decisions/023:'
+	@docker image inspect --format '{{index .RepoDigests 0}}' $(GHCR_IMAGE):$(MLFLOW_TAG)
 
 up: doctor
 	$(COMPOSE) --profile full up -d --build --wait --wait-timeout $(WAIT_TIMEOUT)

@@ -40,3 +40,18 @@ COPY --chmod=0444 ensure_buckets.py /opt/ensure_buckets.py
 RUN groupadd --gid 10001 mlflow \
     && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin mlflow
 USER mlflow
+
+# Provenance, and one of these does real work. `org.opencontainers.image.source` is what a registry
+# reads to attach a published package to the repository it came from: without it a pushed image is an
+# artifact under an account with nothing tying it to the source that produced it, and the permissions
+# and visibility that should follow the repository have to be set by hand instead.
+#
+# Static rather than build arguments. A `revision` label would be more precise -- this tag is MLflow's
+# version, so two different commits both produce `2.22.4` -- and getting a commit into it means
+# plumbing a build argument through compose and making `make build` depend on git state, which an
+# extracted tarball does not have. The digest of each pushed image is recorded against its commit in
+# docs/decisions/023 instead, which ties the two together without making the build read the repository.
+LABEL org.opencontainers.image.source="https://github.com/bytes-of-entropy/mlops-platform" \
+      org.opencontainers.image.title="mlops-platform mlflow" \
+      org.opencontainers.image.description="MLflow tracking server with a Postgres driver and an S3 client" \
+      org.opencontainers.image.licenses="MIT"
