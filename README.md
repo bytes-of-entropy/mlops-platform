@@ -31,11 +31,32 @@ advisory *identity* absent from a committed baseline rather than on a severity
 than done: the GHCR push is built and tested as far as a registry-less machine allows, and waits on the
 repository it publishes alongside ([`023`](docs/decisions/023-only-the-image-this-repository-builds-is-published-and-not-before-the-repository-is.md)).
 
-**Not demonstrated.** M2's Helm chart — MLflow, Postgres and MinIO, with probes, PVCs, an Ingress and an
-HPA — is written, and its 49 contract-tier assertions pass on a machine with no cluster on it. That is
-the weaker half of the claim by construction: those tests parse the chart, and whether `helm install`
-works is not something parsing can settle. The cluster tier that installs it on kind
-(`tests/test_kind_cluster.py`) has never run. Until it does, treat the chart as reviewed and unexercised.
+**Partly demonstrated, and M2 is not closed.** The chart — MLflow, Postgres and MinIO, with probes,
+PVCs, an Ingress and an HPA — has now been installed on a real kind cluster, and these are the parts
+that ran rather than parsed:
+
+| M2 asks for | State |
+| --- | --- |
+| `helm lint` clean | **yes**, first attempt, both values files, `0 chart(s) failed` |
+| healthy pods | **yes**, all three Deployments Available and Running |
+| probes correct | **yes**, and the `startupProbe` earned its 150-second allowance: first boot took minutes, not the one this repo predicted |
+| an Ingress that answers | **partly** — `/health` returns 200 through it; the tracking API returned 503 once and that is unexplained |
+| HPA scales under load | **unproven** — the load generator was invalid Python, so no load was ever generated |
+| charts versioned so a flagship pins a release | **yes**, `0.1.0`, orderable, asserted |
+
+Three of the cluster tier's seven assertions passed. The other four failed on defects in *this
+repository* rather than in the chart: a PowerShell stderr redirect that killed `make kind-deploy` on its
+first line, a load generator assembled with semicolons around a `def`, a credential check that matched
+the release name as a substring, and an assertion looking for quotes that `print` does not emit. All four
+are fixed and none has been re-run, so **M2 stays open** until the tier is green end to end.
+
+What that run did settle: the non-root `fsGroup` values were right, the initContainer created the bucket
+and S3 confirmed it from inside the pod, the credential never reached the rendered manifest, and Helm
+**4.2.4** lints, renders and installs this `apiVersion: v2` chart. Records
+[`024`](docs/decisions/024-the-chart-covers-the-tracking-core-and-its-stateful-parts-are-deployments.md)
+and [`025`](docs/decisions/025-the-cluster-tier-owns-its-cluster-and-the-gate-does-not-create-one.md)
+score nine predictions against it, including two that were wrong.
+
 Terraform (M3) has not started. Model registry, drift detection and canary rollout are deliberately
 deferred; see [`docs/decisions/001`](docs/decisions/001-defer-registry-drift-canary.md).
 
