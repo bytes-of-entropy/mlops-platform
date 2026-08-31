@@ -96,13 +96,15 @@ def test_gathered_sections_keep_the_order_the_caller_gave_them() -> None:
 
 
 def integration_modules() -> list[pathlib.Path]:
-    """Every file that drives a real stack: the shared plumbing plus each integration module.
+    """Every file that drives real infrastructure: the shared plumbing plus each integration module.
 
     Discovered rather than listed. A named list is a list someone has to remember to extend, and
-    the module they forget is the one whose failure nobody can read.
+    the module they forget is the one whose failure nobody can read. `stackops.py` was named here
+    when it was the only plumbing there was, and `clusterops.py` arriving is exactly the case that
+    argument was about, so the plumbing is globbed too.
     """
     tests = pathlib.Path(REPO_ROOT, "tests")
-    found = [tests / "stackops.py"]
+    found = sorted(tests.glob("*ops.py"))
     found.extend(
         path
         for path in sorted(tests.glob("test_*.py"))

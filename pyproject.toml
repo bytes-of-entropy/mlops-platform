@@ -51,6 +51,11 @@ testpaths = ["tests"]
 addopts = "-q --strict-markers"
 markers = [
   "integration: requires a running container runtime; skipped when none is present",
+  # A third tier, and a separate marker because it has to be *deselectable*. Cluster tests carry
+  # `integration` as well, so `-m "not integration"` still describes the contract tier exactly, while
+  # CI's compose job runs `-m "integration and not cluster"` and keeps its zero-skip pass condition.
+  # A tier that cannot be selected on its own cannot have a pass condition of its own.
+  "cluster: needs kind, kubectl and helm, and creates a cluster; the build machine runs these",
 ]
 
 # This repository ships infrastructure, not a library. The Python here is the test suite

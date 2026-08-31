@@ -1,6 +1,6 @@
-"""Whether the container runtime can answer, and what the kept volume says about itself.
+"""Whether the container runtime can answer, what the kept volume says, and what tools are here.
 
-The two things in this repository that cannot be established by reading files. Both are split into
+The things in this repository that cannot be established by reading files. Both are split into
 a pure classifier and a thin shell-out, so the interesting half is testable on a machine with no
 daemon, which is every machine this code is written on.
 """
@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from preflight.locations import REPO_ROOT
@@ -30,6 +31,43 @@ SKIP_REASONS = {
         "server, which counts as stopped here"
     ),
 }
+
+
+#: The three binaries the cluster tier shells out to. A tuple because the order is the order a
+#: message lists them in, and a reader chasing a missing tool should see a stable one.
+CLUSTER_TOOLS = ("kind", "kubectl", "helm")
+
+
+def missing_cluster_tools(which: Callable[[str], str | None] = shutil.which) -> tuple[str, ...]:
+    """Which of the cluster tools are not on PATH, in declaration order.
+
+    Presence only, deliberately, where `probe_docker` goes further and asks the daemon to answer.
+    The asymmetry is not an oversight: a docker client with no daemon is the *usual* state of a
+    developer machine and reads as installed, so presence there is misleading. `kind`, `kubectl` and
+    `helm` are single binaries with no daemon of their own — an installed `helm` works — and the one
+    thing they need that could be absent is a cluster, which the tier creates rather than requires.
+
+    `which` is injected so the classifier can be tested on a machine that has these tools and on one
+    that does not, which is the same reason `classify_docker_state` is separate from `probe_docker`.
+    """
+    return tuple(name for name in CLUSTER_TOOLS if which(name) is None)
+
+
+def cluster_skip_reason(missing: tuple[str, ...]) -> str:
+    """Why the cluster tier is skipping, naming what to install rather than that something is wrong.
+
+    Record 006's rule: a missing precondition skips with its name, and does not fail as the thing it
+    blocks. A reader who sees "helm is not installed" knows what to do; one who sees a chart failing
+    to install goes looking for a defect in the chart.
+    """
+    if not missing:
+        return ""
+    listed = ", ".join(missing)
+    plural = "are" if len(missing) > 1 else "is"
+    return (
+        f"{listed} {plural} not on PATH; the cluster tier needs all of "
+        f"{', '.join(CLUSTER_TOOLS)}, and runs on the build machine"
+    )
 
 
 def classify_docker_state(

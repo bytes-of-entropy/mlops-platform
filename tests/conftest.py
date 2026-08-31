@@ -27,7 +27,13 @@ from preflight.locations import (
     REPO_ROOT,
     read_text_if_present,
 )
-from preflight.runtime import DOCKER_READY, SKIP_REASONS, probe_docker
+from preflight.runtime import (
+    DOCKER_READY,
+    SKIP_REASONS,
+    cluster_skip_reason,
+    missing_cluster_tools,
+    probe_docker,
+)
 
 __all__ = [
     "COMPOSE_FILE",
@@ -38,6 +44,7 @@ __all__ = [
     "QUICKSTART_FILE",
     "REPO_ROOT",
     "describe_process",
+    "requires_cluster",
     "requires_docker",
     "requires_local_credentials",
 ]
@@ -83,6 +90,20 @@ MISSING_CREDENTIALS = missing_credentials(
 # The second precondition, and the one a fresh machine hits after Docker is installed but before
 # the credentials exist. Without it those tests attempt a real `up`, compose refuses on an unset
 # variable, and three idempotency failures report a broken cycle when the cycle was never run.
+#: What is missing for the cluster tier, resolved once at import like DOCKER_STATE is.
+MISSING_CLUSTER_TOOLS = missing_cluster_tools()
+
+#: Skips the cluster tier when kind, kubectl or helm is absent, naming which.
+#:
+#: Deliberately *not* wired into `preflight.checks.ORDER`, so `make doctor` does not start
+#: refusing on a machine that has no kind. The doctor answers whether this machine can start the
+#: stack, and the compose spine needs none of these three. Sharing `preflight.runtime` gets one
+#: tested probe without widening what the doctor demands, which is how `requires_docker` is built.
+requires_cluster = pytest.mark.skipif(
+    bool(MISSING_CLUSTER_TOOLS),
+    reason=cluster_skip_reason(MISSING_CLUSTER_TOOLS),
+)
+
 requires_local_credentials = pytest.mark.skipif(
     bool(MISSING_CREDENTIALS),
     reason=credentials_skip_reason(MISSING_CREDENTIALS),
