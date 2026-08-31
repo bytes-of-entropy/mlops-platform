@@ -151,12 +151,18 @@ switch ($Target) {
         Invoke-Checked $Py @('-m', 'mypy')
     }
     'hooks' { Invoke-Checked $Py @('-m', 'pre_commit', 'run', '--all-files') }
+    # `check: lint hooks test` in the Makefile, and delegation here rather than five copied lines.
+    #
+    # It used to inline them, and the copy drifted the moment `test` grew a selection: this arm went on
+    # running the whole suite while `test` ran `not cluster`, so on a machine with kind installed
+    # `check` created a Kubernetes cluster inside the gate that every clone runs to prove itself --
+    # exactly what splitting the targets was meant to prevent. The name parity test could not see it,
+    # because it compares which targets exist and not what each one does.
     'check' {
-        Invoke-Checked $Py @('-m', 'ruff', 'format', '--check', '.')
-        Invoke-Checked $Py @('-m', 'ruff', 'check', '.')
-        Invoke-Checked $Py @('-m', 'mypy')
-        Invoke-Checked $Py @('-m', 'pre_commit', 'run', '--all-files')
-        Invoke-Checked $Py @('-m', 'pytest')
+        foreach ($stage in @('lint', 'hooks', 'test')) {
+            & $PSCommandPath $stage
+            if ($LASTEXITCODE -ne 0) { throw "$stage failed" }
+        }
     }
     'fmt' {
         Invoke-Checked $Py @('-m', 'ruff', 'format', '.')

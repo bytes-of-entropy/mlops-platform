@@ -128,10 +128,15 @@ def test_the_gate_runs_the_hooks_in_both_entrypoints_and_in_ci() -> None:
     assert gate, "the Makefile has no check target"
     assert "hooks" in gate.group(1).split(), f"make check does not run the hooks: {gate.group(1)}"
 
-    powershell = (REPO_ROOT / "make.ps1").read_text(encoding="utf-8")
-    ps_check = re.search(r"^    'check' \{.*?^    \}", powershell, re.MULTILINE | re.DOTALL)
-    assert ps_check, "make.ps1 has no check branch"
-    assert "pre_commit" in ps_check.group(0), "make.ps1's check does not run the hooks"
+    # Either the arm runs the hooks itself or it names the arm that does. Both are correct and the
+    # second is better, because a `check` repeating what `hooks` says can drift from it -- which is
+    # what happened to the pytest command that used to sit in this arm.
+    arms = powershell_arms()
+    assert "check" in arms, "make.ps1 has no check branch"
+    check = arms["check"]
+    assert "pre_commit" in check or "hooks" in check, (
+        "make.ps1's check neither runs the hooks nor delegates to the arm that does"
+    )
 
     workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     assert "pre_commit run --all-files" in workflow, "CI does not run the hooks"
@@ -683,4 +688,69 @@ def test_the_database_cache_is_shared_across_documents() -> None:
     for name in ("Makefile", "make.ps1"):
         assert "GRYPE_DB_CACHE_DIR" in scan_body(name), (
             f"{name}'s scan names no database cache, so every document pays for its own download"
+        )
+
+
+#: The only target allowed to run the cluster tier. Every other invocation of the suite, in either
+#: entrypoint, has to exclude it.
+CLUSTER_TARGET = "test-cluster"
+
+
+def powershell_arms() -> dict[str, str]:
+    """Each `switch` arm of make.ps1, by target name, as text.
+
+    Bodies are found by brace depth rather than by regex, because an arm contains braces of its
+    own -- a `foreach`, a hashtable, a format string in a docker argument -- and a pattern stopping
+    at the first closing brace truncates the arm it was meant to read.
+    """
+    text = (REPO_ROOT / "make.ps1").read_text(encoding="utf-8")
+    arms: dict[str, str] = {}
+    for match in re.finditer(r"^\s{4}'(?P<target>[a-z-]+)'\s*\{", text, re.MULTILINE):
+        depth = 0
+        for index in range(match.end() - 1, len(text)):
+            if text[index] == "{":
+                depth += 1
+            elif text[index] == "}":
+                depth -= 1
+                if depth == 0:
+                    arms[match.group("target")] = text[match.end() : index]
+                    break
+    return arms
+
+
+def test_no_entrypoint_runs_the_whole_suite_except_the_target_that_should() -> None:
+    """A gate that creates a Kubernetes cluster is a gate people stop running.
+
+    `make test` selects `not cluster` so the target every clone runs to prove itself stays fast and
+    needs no kind. That selection is worth nothing if another target reaches for pytest directly,
+    and one did: make.ps1's `check` inlined the four commands the Makefile's `check` gets from its
+    prerequisites, and the copy drifted the moment `test` grew its selection. On a machine with kind
+    installed it created a cluster inside the clone gate.
+
+    The name parity test cannot catch this, which is the point of having this one: that test
+    compares which targets exist, not what each does. So every unfiltered pytest invocation fails
+    here except the one in `test-cluster`, whose whole job is the tier.
+    """
+    makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+    unfiltered = [
+        line.strip()
+        for line in makefile.splitlines()
+        if "-m pytest" in line and "-m " not in line.split("-m pytest", 1)[1]
+    ]
+    assert not unfiltered, (
+        f"the Makefile runs pytest with no marker selection: {unfiltered}. Only "
+        f"{CLUSTER_TARGET} may reach the cluster tier"
+    )
+
+    arms = powershell_arms()
+    assert "test" in arms and CLUSTER_TARGET in arms, (
+        f"make.ps1 has no test or {CLUSTER_TARGET} arm, so this test is reading the wrong file"
+    )
+    for target, body in arms.items():
+        if target == CLUSTER_TARGET or "pytest" not in body:
+            continue
+        assert "not cluster" in body, (
+            f"make.ps1's {target} arm runs pytest without excluding the cluster tier, so running "
+            f"it on a machine with kind creates a cluster. Delegate to the test arm rather than "
+            f"repeating its command"
         )
