@@ -62,4 +62,41 @@ jobs:
             echo "AIRFLOW_FERNET_KEY=$(openssl rand -base64 32)"
           } >> .env
       - name: quickstart cycle
-        run: .venv/bin/python -m pytest -m integration
+        # `not cluster` because this runner has docker and no kind. Selecting the cluster tier here
+        # would skip it, and a skip inside the integration tier reads as a pass, which is the one
+        # thing that tier's zero-skip rule exists to prevent. Excluded by selection, so the count
+        # this job reports is a count of tests that actually ran.
+        run: .venv/bin/python -m pytest -m "integration and not cluster"
+
+  chart:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: azure/setup-helm@v4
+        with:
+          # Helm 3's current release, not Helm 4's. Helm 4 exists and is newer, and this chart has
+          # never been rendered by it; the version CI uses is the version the chart's `tested-on`
+          # annotation can honestly name. Chart apiVersion v2 is what Helm 3 reads, so moving to 4
+          # is a change to make deliberately with a run behind it rather than by taking a default.
+          version: v3.21.4
+      - name: install
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -e ".[dev]"
+      - name: helm lint and render
+        # The half of the chart's correctness Python cannot reach. `tests/test_chart_templates.py`
+        # pseudo-renders the templates by dropping their control lines, which navigates structure
+        # and cannot prove a template renders at all: an unclosed `{{- if`, a pipeline into a
+        # function that does not exist, a `.Values` path that resolves to nil mid-expression are all
+        # invisible to it and all fatal here. `helm template` is the stricter of the two, because
+        # `lint` tolerates a chart that renders to nothing.
+        run: make chart-lint
+      - name: chart contract suite
+        # Also run in the contract job, and cheap. Kept here so a helm-only failure and a
+        # chart-assertion failure land in the same place, rather than one job saying the chart
+        # renders and another saying its values are wrong.
+        run: .venv/bin/python -m pytest tests/test_chart_contract.py tests/test_chart_templates.py
