@@ -6,6 +6,12 @@ repos:
       - id: end-of-file-fixer
       - id: trailing-whitespace
       - id: check-yaml
+        # Helm templates are not YAML. `{{ include ... }}` is a flow mapping to a YAML parser and a
+        # function call to Helm, so every template under charts/ fails this hook while being correct.
+        # Excluded rather than silenced: what checks those files is `helm lint` and `helm template` in
+        # CI, plus tests/test_chart_contract.py and tests/test_chart_templates.py, which read them as
+        # text on machines that have no helm. Chart.yaml and values.yaml are real YAML and stay in.
+        exclude: ^charts/[^/]+/templates/
       - id: check-merge-conflict
       - id: detect-private-key
       - id: check-added-large-files

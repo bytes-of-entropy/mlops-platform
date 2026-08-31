@@ -1,0 +1,48 @@
+# The reviewer's laptop, not the build machine.
+#
+# The compose spine already carries this idea in `compose/docker-compose.quickstart.yml`, and the gate
+# holds it to 4 GB and 2 CPU because "a reviewer on a laptop is the median reviewer". A kind cluster is
+# heavier than compose before any of this chart is installed -- it adds a control plane, metrics-server
+# and an ingress controller -- so the same ceiling leaves this chart less room, not more.
+#
+# The numbers are the compose quickstart's, with requests added because an HPA needs them and a
+# scheduler that cannot fit a pod leaves it Pending with no explanation a reviewer will enjoy finding.
+#
+# Applied on top of values.yaml:
+#   helm upgrade --install mlops-platform charts/mlops-platform -f charts/mlops-platform/values-quickstart.yaml
+
+mlflow:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      cpu: 250m
+      memory: 768Mi
+  hpa:
+    # One to two, not one to four. The point of an HPA on a laptop is that it demonstrably scales, and
+    # two replicas prove that as well as four do while costing one pod's worth of a 4 GB budget rather
+    # than three.
+    maxReplicas: 2
+
+postgres:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 250m
+      memory: 512Mi
+  persistence:
+    size: 1Gi
+
+minio:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 250m
+      memory: 512Mi
+  persistence:
+    size: 1Gi

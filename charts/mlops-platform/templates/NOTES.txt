@@ -1,0 +1,35 @@
+{{ .Chart.Name }} {{ .Chart.Version }} installed as {{ .Release.Name }} (MLflow {{ .Chart.AppVersion }}).
+
+Wait for it, rather than assuming it:
+
+  kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "mlops-platform.fullname" . }}-mlflow
+
+{{- if .Values.mlflow.ingress.enabled }}
+
+MLflow is at http://{{ .Values.mlflow.ingress.host }}{{ .Values.mlflow.ingress.path }}
+
+That host resolves to 127.0.0.1 without any hosts-file edit, which is the only reason it is the
+default: `localtest.me` and everything under it are public DNS records pointing at loopback. It needs
+an ingress controller listening on the node's port 80, which `make kind-up` installs and which a
+cluster created by hand will not have.
+{{- else }}
+
+No Ingress: mlflow.ingress.enabled is false. Reach it by port-forward instead.
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "mlops-platform.fullname" . }}-mlflow {{ .Values.mlflow.service.port }}
+{{- end }}
+{{- if .Values.mlflow.hpa.enabled }}
+
+The autoscaler reports nothing until metrics-server is running, and kind ships without it. If this
+shows <unknown> rather than a percentage, that is the cause and not the chart:
+
+  kubectl -n {{ .Release.Namespace }} get hpa {{ include "mlops-platform.fullname" . }}-mlflow
+{{- end }}
+
+Two things this release does NOT include, so they are not looked for later:
+
+  - Spark and Airflow. Both are in the compose spine and deliberately absent here: neither is a plain
+    Deployment on Kubernetes, and modelling either as one would misrepresent how it runs. Record 024.
+  - Any credential. They come from the Secret {{ .Values.credentials.secretName }}, created outside
+    this chart from the same .env that compose reads. If a pod is stuck in CreateContainerConfigError,
+    that Secret is missing and `make kind-deploy` is what creates it.

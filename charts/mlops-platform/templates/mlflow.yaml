@@ -1,0 +1,191 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mlops-platform.fullname" . }}-mlflow
+  labels:
+    {{- include "mlops-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mlflow
+spec:
+  type: {{ .Values.mlflow.service.type }}
+  ports:
+    - port: {{ .Values.mlflow.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "mlops-platform.selectorLabels" (dict "root" . "component" "mlflow") | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mlops-platform.fullname" . }}-mlflow
+  labels:
+    {{- include "mlops-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mlflow
+spec:
+  # Absent when the HPA owns this, rather than set to a number the HPA will immediately overwrite.
+  # A Deployment with a hardcoded `replicas` and an HPA fight on every reconcile: Helm reapplies the
+  # chart's number, the HPA reapplies its own, and the pod count oscillates for reasons nothing in
+  # either object explains.
+  {{- if not .Values.mlflow.hpa.enabled }}
+  replicas: {{ .Values.mlflow.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "mlops-platform.selectorLabels" (dict "root" . "component" "mlflow") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "mlops-platform.labels" . | nindent 8 }}
+        app.kubernetes.io/component: mlflow
+    spec:
+      securityContext:
+        {{- toYaml .Values.mlflow.securityContext | nindent 8 }}
+      # The bucket MLflow's artifact root names, created before MLflow can be asked for it.
+      #
+      # An initContainer rather than a `post-install` hook Job, and record 015 is why this is not a
+      # detail. A missing bucket survived a green M0: the smoke path logged a param and a metric, both
+      # of which go to Postgres, so nothing walked the artifact path and nothing failed. A hook Job
+      # runs once per release and is absent on every reschedule and every node move; an initContainer
+      # runs before each pod's own container and blocks exactly the thing that needs it. The script is
+      # idempotent, so paying for it on every start costs a round trip.
+      initContainers:
+        - name: ensure-buckets
+          image: {{ include "mlops-platform.image" .Values.mlflow.image }}
+          imagePullPolicy: {{ .Values.mlflow.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.mlflow.securityContext | nindent 12 }}
+          command: ["python", "/opt/ensure_buckets.py"]
+          args: [{{ .Values.minio.bucket | quote }}]
+          env:
+            {{- include "mlops-platform.minioEnv" . | nindent 12 }}
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+      containers:
+        - name: mlflow
+          image: {{ include "mlops-platform.image" .Values.mlflow.image }}
+          imagePullPolicy: {{ .Values.mlflow.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.mlflow.securityContext | nindent 12 }}
+          # `$(VAR)` is Kubernetes' own substitution, resolved in the container at start from the
+          # environment below. It is not shell interpolation and it is not Helm templating, and the
+          # difference is the point: the rendered manifest contains the literal string
+          # `$(POSTGRES_PASSWORD)`, so the credential is in the pod's environment and not in its spec.
+          # Putting the assembled URI in `args` at render time would publish the password to anyone
+          # who can run `kubectl get deploy -o yaml`.
+          command: ["mlflow"]
+          args:
+            - server
+            - --host
+            - 0.0.0.0
+            - --port
+            - {{ .Values.mlflow.service.port | quote }}
+            - --backend-store-uri
+            - postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@{{ include "mlops-platform.fullname" . }}-postgres:{{ .Values.postgres.service.port }}/$(POSTGRES_DB)
+            - --default-artifact-root
+            - s3://{{ .Values.minio.bucket }}/
+          env:
+            {{- include "mlops-platform.postgresEnv" . | nindent 12 }}
+            {{- include "mlops-platform.minioEnv" . | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.mlflow.service.port }}
+              protocol: TCP
+          # Three probes, because the first boot and the steady state want different patience and one
+          # probe cannot have both. MLflow runs its Alembic migrations against Postgres before serving,
+          # so a liveness timeout generous enough for that is too slow to notice a wedged server, and
+          # one tight enough to notice restarts the pod mid-migration forever. `startupProbe` holds
+          # liveness off until the server answers once.
+          startupProbe:
+            httpGet:
+              path: {{ .Values.mlflow.probes.startup.path }}
+              port: http
+            periodSeconds: {{ .Values.mlflow.probes.startup.periodSeconds }}
+            failureThreshold: {{ .Values.mlflow.probes.startup.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.mlflow.probes.readiness.path }}
+              port: http
+            periodSeconds: {{ .Values.mlflow.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.mlflow.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.mlflow.probes.readiness.failureThreshold }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.mlflow.probes.liveness.path }}
+              port: http
+            periodSeconds: {{ .Values.mlflow.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.mlflow.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.mlflow.probes.liveness.failureThreshold }}
+          resources:
+            {{- toYaml .Values.mlflow.resources | nindent 12 }}
+{{- if .Values.mlflow.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "mlops-platform.fullname" . }}-mlflow
+  labels:
+    {{- include "mlops-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mlflow
+  {{- with .Values.mlflow.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  # From values, so EKS supplies `alb` without editing this file. An empty class would let whichever
+  # controller claims the default decide, which is how a chart works on one cluster and silently does
+  # nothing on another.
+  ingressClassName: {{ .Values.mlflow.ingress.className }}
+  rules:
+    - host: {{ .Values.mlflow.ingress.host }}
+      http:
+        paths:
+          - path: {{ .Values.mlflow.ingress.path }}
+            pathType: {{ .Values.mlflow.ingress.pathType }}
+            backend:
+              service:
+                name: {{ include "mlops-platform.fullname" . }}-mlflow
+                port:
+                  number: {{ .Values.mlflow.service.port }}
+{{- end }}
+{{- if .Values.mlflow.hpa.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "mlops-platform.fullname" . }}-mlflow
+  labels:
+    {{- include "mlops-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mlflow
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "mlops-platform.fullname" . }}-mlflow
+  minReplicas: {{ .Values.mlflow.hpa.minReplicas }}
+  maxReplicas: {{ .Values.mlflow.hpa.maxReplicas }}
+  metrics:
+    # Utilisation is a percentage of the container's CPU *request*, not of its limit and not of the
+    # node. A container with a limit and no request gives this nothing to divide by and the HPA
+    # reports `<unknown>` forever, which is why this chart sets requests the compose spine does not.
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.mlflow.hpa.targetCPUUtilizationPercentage }}
+  behavior:
+    # Asymmetric on purpose. Scaling up on a burst is cheap and reversible; scaling down early throws
+    # away a warm pod that has already paid for its migrations check and its connection pool. The
+    # default 300s stabilisation window is the one being made explicit rather than changed, so a
+    # reader can see it was chosen.
+    scaleDown:
+      stabilizationWindowSeconds: 300
+    scaleUp:
+      stabilizationWindowSeconds: 0
+{{- end }}

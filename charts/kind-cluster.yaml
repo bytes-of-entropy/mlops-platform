@@ -1,0 +1,38 @@
+# The kind cluster this chart is developed against.
+#
+# Everything here exists because kind is not EKS, which is exactly why it is in this file and not in
+# the chart. `OFFLINE_FIRST.md` promises "same manifests, same Helm charts" between the two, and that
+# is only true if the cluster's peculiarities live outside the templates.
+#
+# Used by `make kind-up`:
+#   kind create cluster --name mlops-platform --config charts/kind-cluster.yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: mlops-platform
+
+nodes:
+  - role: control-plane
+    # ingress-nginx's kind manifest schedules onto a node carrying this label and nothing else does.
+    # Without it the controller pod sits Pending and the Ingress appears to be ignored, which reads as
+    # a chart problem and is not one.
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    # A cloud load balancer answers an Ingress from outside the cluster. kind has none, so the node's
+    # own 80 and 443 are published to the host instead. This is the substitution `OFFLINE_FIRST.md`
+    # names -- kind for EKS, ALB absent -- made concrete.
+    extraPortMappings:
+      - containerPort: 80
+        hostPort: 80
+        protocol: TCP
+      - containerPort: 443
+        hostPort: 443
+        protocol: TCP
+
+# One node, deliberately. Extra workers would let a reviewer watch pods spread across them, which
+# looks impressive and demonstrates nothing this milestone claims: the HPA's question is whether
+# replicas appear, not which node they land on. Each additional node is another kubelet and another
+# container runtime inside a 4 GB budget that already has a control plane in it.

@@ -1,0 +1,126 @@
+{{- if .Values.minio.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "mlops-platform.fullname" . }}-minio
+  labels:
+    {{- include "mlops-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
+spec:
+  accessModes: ["ReadWriteOnce"]
+  {{- if .Values.minio.persistence.storageClass }}
+  storageClassName: {{ .Values.minio.persistence.storageClass }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.minio.persistence.size }}
+---
+{{- end }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mlops-platform.fullname" . }}-minio
+  labels:
+    {{- include "mlops-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.minio.service.apiPort }}
+      targetPort: api
+      protocol: TCP
+      name: api
+    - port: {{ .Values.minio.service.consolePort }}
+      targetPort: console
+      protocol: TCP
+      name: console
+  selector:
+    {{- include "mlops-platform.selectorLabels" (dict "root" . "component" "minio") | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mlops-platform.fullname" . }}-minio
+  labels:
+    {{- include "mlops-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
+spec:
+  replicas: 1
+  # `Recreate`, for the same reason as Postgres: one ReadWriteOnce volume cannot be held by an old
+  # pod and a new one at once, so a rolling update deadlocks on itself.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "mlops-platform.selectorLabels" (dict "root" . "component" "minio") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "mlops-platform.labels" . | nindent 8 }}
+        app.kubernetes.io/component: minio
+    spec:
+      securityContext:
+        {{- toYaml .Values.minio.podSecurityContext | nindent 8 }}
+      containers:
+        - name: minio
+          image: {{ include "mlops-platform.image" .Values.minio.image }}
+          imagePullPolicy: {{ .Values.minio.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.minio.securityContext | nindent 12 }}
+          args:
+            - server
+            - /data
+            - --console-address
+            - ":{{ .Values.minio.service.consolePort }}"
+          env:
+            # MinIO's own names for its root credentials, from the same Secret keys the rest of the
+            # spine reads. The compose spine gives these the same two values.
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.credentials.secretName }}
+                  key: {{ .Values.credentials.keys.minioRootUser }}
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.credentials.secretName }}
+                  key: {{ .Values.credentials.keys.minioRootPassword }}
+          ports:
+            - name: api
+              containerPort: {{ .Values.minio.service.apiPort }}
+              protocol: TCP
+            - name: console
+              containerPort: {{ .Values.minio.service.consolePort }}
+              protocol: TCP
+          # MinIO publishes two health endpoints that mean different things, so this uses both rather
+          # than pointing two probes at one path. `live` answers once the process is up; `ready`
+          # answers only when the object layer can actually serve a request, which is the one that
+          # should gate traffic.
+          readinessProbe:
+            httpGet:
+              path: /minio/health/ready
+              port: api
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: api
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.minio.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          {{- if .Values.minio.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "mlops-platform.fullname" . }}-minio
+          {{- else }}
+          emptyDir: {}
+          {{- end }}

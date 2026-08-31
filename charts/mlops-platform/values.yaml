@@ -1,0 +1,177 @@
+# Everything a deployment of this chart can vary, and nothing it cannot.
+#
+# Two rules govern what is allowed in this file, and both are load-bearing.
+#
+# **No credential appears here, ever.** Not as a value, not as a default, not as an example. The
+# credentials this spine needs are created as a Kubernetes Secret from the same `.env` that compose
+# reads, outside the chart, by `make kind-deploy`. Every workload reads them by `secretKeyRef`. A
+# contract test greps this whole directory for credential-shaped literals, the same assertion the
+# compose spine has carried since M0. A chart that ships a working default password is how a
+# credential reaches a public repository.
+#
+# **Nothing kind-specific is hardcoded in a template.** Anything that differs between kind and EKS is
+# a key here, so the delta on cloud day is this file rather than a diff of the templates. That is the
+# claim OFFLINE_FIRST.md makes -- "same manifests, same Helm charts" -- and it is only true if the
+# templates never learn which cluster they are on.
+
+nameOverride: ""
+fullnameOverride: ""
+
+# The Secret holding the credentials, created outside this chart by `make kind-deploy`.
+#
+# There is deliberately no `create` toggle. One was here and came out: no template read it, so it was
+# a switch that looked operative and was not, and a reader who set it would have got silence. This
+# chart does not create that Secret under any value of anything, and a contract test asserts no
+# template here renders a Secret at all -- which is the invariant, where the toggle was only a hint.
+credentials:
+  secretName: mlops-platform-credentials
+  keys:
+    postgresUser: POSTGRES_USER
+    postgresPassword: POSTGRES_PASSWORD
+    postgresDatabase: POSTGRES_DB
+    minioRootUser: MINIO_ROOT_USER
+    minioRootPassword: MINIO_ROOT_PASSWORD
+
+mlflow:
+  replicaCount: 1
+  image:
+    repository: mlops-platform/mlflow
+    tag: "2.22.4"
+    # Empty for the image built here, which has no registry digest to pin -- record 018's whole
+    # argument. Set it, together with a registry-qualified repository, to deploy the published copy
+    # instead: that is the one change EKS needs and it is a value rather than a template edit.
+    digest: ""
+    # `IfNotPresent`, not `Never` and not `Always`. `Never` would make the chart kind-only, since it
+    # forbids the pull EKS depends on. `Always` would make a locally built image unusable, because
+    # nothing can pull `mlops-platform/mlflow` from anywhere. `IfNotPresent` runs the image kind was
+    # given and pulls the one EKS is pointed at.
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 5000
+  # Requests exist here and do not exist in compose, and that is not an oversight in either place.
+  # Compose has no scheduler to inform and no autoscaler reading utilisation, so limits alone are the
+  # whole story there. An HPA computes utilisation as a fraction of the *request*, so a chart with a
+  # limit and no request gives the autoscaler nothing to divide by. The limits match the compose
+  # spine's; the requests are new information this chart has to supply.
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+  # Three probes doing three different jobs, which is the point of having three.
+  #
+  # `startup` buys the first boot as long as it needs -- MLflow runs its Alembic migrations against
+  # Postgres before it serves anything -- while keeping liveness aggressive afterwards. Without it the
+  # two are in conflict: a liveness timeout generous enough for a cold migration is too slow to
+  # notice a wedged server, and one tight enough to notice restarts the pod mid-migration forever.
+  probes:
+    startup:
+      path: /health
+      periodSeconds: 5
+      failureThreshold: 30
+    readiness:
+      path: /health
+      periodSeconds: 10
+      timeoutSeconds: 3
+      failureThreshold: 3
+    liveness:
+      path: /health
+      periodSeconds: 20
+      timeoutSeconds: 5
+      failureThreshold: 3
+  ingress:
+    enabled: true
+    # Named here rather than in the template so EKS can say `alb` without a template edit. Empty
+    # would let the cluster's default class decide, which is exactly the kind of implicit behaviour
+    # that makes a chart work on one cluster and not another.
+    className: nginx
+    host: mlflow.localtest.me
+    path: /
+    pathType: Prefix
+    annotations: {}
+  hpa:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 4
+    # CPU rather than requests-per-second: a custom metric needs an adapter, which is another
+    # component to install and explain inside kind, and the milestone's question is whether an HPA is
+    # wired correctly rather than whether the metric is the cleverest available.
+    targetCPUUtilizationPercentage: 70
+
+postgres:
+  image:
+    repository: postgres
+    tag: 16.15-alpine
+    digest: sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+    pullPolicy: IfNotPresent
+  service:
+    port: 5432
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  # 999 is the `postgres` account in the official image. `fsGroup` is what makes a non-root Postgres
+  # workable at all: the data directory arrives owned by root, and the kubelet chowns a volume to the
+  # fsGroup on mount, so without it the server exits on its own permission check.
+  podSecurityContext:
+    fsGroup: 999
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 999
+    runAsGroup: 999
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+  persistence:
+    enabled: true
+    size: 2Gi
+    # Empty means the cluster's default StorageClass, which is what kind and EKS both provide under
+    # different names. Naming one here would pick a fight with whichever cluster does not have it.
+    storageClass: ""
+
+minio:
+  image:
+    repository: minio/minio
+    tag: RELEASE.2025-09-07T16-13-09Z
+    digest: sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    pullPolicy: IfNotPresent
+  service:
+    apiPort: 9000
+    consolePort: 9001
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  podSecurityContext:
+    fsGroup: 1000
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+  persistence:
+    enabled: true
+    size: 4Gi
+    storageClass: ""
+  # The bucket MLflow's artifact root names. An initContainer creates it before MLflow starts, which
+  # record 015 exists to insist on: a missing bucket survived a green M0 because the smoke path logged
+  # a param and a metric and neither touches object storage.
+  bucket: mlflow
