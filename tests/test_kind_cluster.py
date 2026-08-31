@@ -253,8 +253,24 @@ def test_the_tracking_api_writes_through_to_postgres(cluster: Cluster) -> None:
     the backend URI wrongly would pass every check above this one. Creating an experiment writes a
     row through the `$(VAR)`-substituted connection string, and searching for it again reads that
     row back, which is the only way to tell a working credential from an unexercised one.
+
+    Asked from inside the cluster first, and that ordering is deliberate. The first real run got 200
+    from `/health` and 503 from this endpoint, which left two possible subjects: the Ingress and its
+    endpoints, or MLflow itself. Asking the ClusterIP directly separates them before the assertion
+    is made, so a failure names one side instead of leaving the next run to find out.
     """
     name = "kind-cluster-check"
+    service = f"{TEST_RELEASE}-mlflow"
+    inside = cluster.ask_from_inside(
+        service,
+        f"http://{service}:{MLFLOW_PORT}/api/2.0/mlflow/experiments/create",
+        json.dumps({"name": f"{name}-inside"}),
+    )
+    assert "status 200" in inside, (
+        "MLflow refused this request on its own ClusterIP, so the Ingress is not the subject:\n"
+        f"{inside}"
+    )
+
     created = through_the_ingress("/api/2.0/mlflow/experiments/create", {"name": name})
     assert "experiment_id" in created["body"], created
 

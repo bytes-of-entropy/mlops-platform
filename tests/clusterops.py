@@ -387,6 +387,38 @@ class Cluster:
             self.kubectl("exec", f"deploy/{deployment}", "--", *INTERPRETER, script),
         ).stdout
 
+    def ask_from_inside(self, deployment: str, url: str, payload: str | None = None) -> str:
+        """Make one HTTP request from inside a pod, bypassing the Ingress entirely.
+
+        This splits a question the first run could not answer. `/health` returned 200 through the
+        Ingress and the API returned 503 seconds later, and 503 is what nginx says when it has no
+        ready endpoint as well as something an application can say for itself. Asking the same URL
+        from inside the cluster separates the two: if this succeeds and the Ingress does not, the
+        Ingress or its endpoints are the subject; if both refuse, MLflow is.
+
+        Prints the status and the start of the body rather than raising on an HTTP error, because
+        the status is the finding here and a non-2xx is what the caller is investigating.
+        """
+        body = "None" if payload is None else repr(payload.encode())
+        script = "\n".join(
+            (
+                "import urllib.error, urllib.request",
+                f"request = urllib.request.Request({url!r}, data={body})",
+                "request.add_header('Content-Type', 'application/json')",
+                "try:",
+                "    response = urllib.request.urlopen(request, timeout=20)",
+                "    print('status', response.status)",
+                "    print(response.read()[:400].decode('utf-8', 'replace'))",
+                "except urllib.error.HTTPError as error:",
+                "    print('status', error.code)",
+                "    print('server', error.headers.get('Server', 'unnamed'))",
+                "    print(error.read()[:400].decode('utf-8', 'replace'))",
+                "except Exception as error:",
+                "    print('no answer at all:', type(error).__name__, error)",
+            )
+        )
+        return self.exec_script(deployment, script)
+
     def start_load(self, target: str, port: int, replicas: int, threads: int) -> None:
         """Enough CPU on the target to move an HPA, generated from inside the cluster.
 
