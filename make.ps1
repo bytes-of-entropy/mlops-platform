@@ -112,7 +112,8 @@ function Invoke-Checked {
 switch ($Target) {
     'help' {
         Write-Output 'setup           create .venv and install dev dependencies'
-        Write-Output 'test            run the test suite'
+        Write-Output 'test            run the test suite, without the cluster tier'
+        Write-Output 'test-cluster    the cluster tier only; needs kind, kubectl and helm'
         Write-Output 'lint            formatting, ruff and mypy, changing nothing'
         Write-Output 'hooks           run every pre-commit hook over the whole tree'
         Write-Output 'check           everything the gate requires: lint, hooks, test'
@@ -142,7 +143,8 @@ switch ($Target) {
         if (Test-Path '.git') { Invoke-Checked $Py @('-m', 'pre_commit', 'install') }
         else { Write-Output 'no .git here, so no hook was installed; the CI hooks job runs them regardless' }
     }
-    'test' { Invoke-Checked $Py @('-m', 'pytest') }
+    'test' { Invoke-Checked $Py @('-m', 'pytest', '-m', 'not cluster') }
+    'test-cluster' { Invoke-Checked $Py @('-m', 'pytest', '-m', 'cluster') }
     'lint' {
         Invoke-Checked $Py @('-m', 'ruff', 'format', '--check', '.')
         Invoke-Checked $Py @('-m', 'ruff', 'check', '.')

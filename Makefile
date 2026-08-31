@@ -76,11 +76,12 @@ CHART           ?= charts/mlops-platform
 RELEASE         ?= mlops-platform
 K8S_NAMESPACE   ?= mlops
 
-.PHONY: help setup test lint fmt hooks check doctor build push sbom scan-report scan scan-accept chart-lint kind-up kind-deploy kind-down up up-quickstart down clean reset ps logs config
+.PHONY: help setup test test-cluster lint fmt hooks check doctor build push sbom scan-report scan scan-accept chart-lint kind-up kind-deploy kind-down up up-quickstart down clean reset ps logs config
 
 help:
 	@echo "setup           create .venv and install dev dependencies"
-	@echo "test            run the test suite"
+	@echo "test            run the test suite, without the cluster tier"
+	@echo "test-cluster    the cluster tier only; needs kind, kubectl and helm"
 	@echo "lint            formatting, ruff and mypy, changing nothing"
 	@echo "hooks           run every pre-commit hook over the whole tree"
 	@echo "check           everything the gate requires: lint, hooks, test"
@@ -111,8 +112,19 @@ setup:
 	@if [ -d .git ]; then $(PY) -m pre_commit install; else \
 	  echo "no .git here, so no hook was installed; the CI hooks job runs them regardless"; fi
 
+# Everything except the cluster tier, and that exclusion is what keeps this target the gate.
+#
+# `make test` is run by `make check`, by the pre-commit path, and by whatever clones this repository
+# next. The cluster tier creates a kind cluster, pulls a node image and an ingress controller, and
+# takes minutes; a gate that does that is a gate people stop running. Excluded by selection rather
+# than left to skip, so the count this prints is a count of tests that ran.
 test:
-	$(PY) -m pytest
+	$(PY) -m pytest -m "not cluster"
+
+# The cluster tier, asked for explicitly. Needs kind, kubectl and helm; `make doctor` deliberately
+# does not check for them, because the doctor answers whether the compose spine can start.
+test-cluster:
+	$(PY) -m pytest -m cluster
 
 # --check, not a reformat: a gate that fixes what it finds cannot fail, and a target that
 # silently rewrites files is the wrong thing to run in CI. ``make fmt`` is the one that writes.
