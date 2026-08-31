@@ -1,30 +1,26 @@
 """The chart's templates, checked as far as text can honestly be checked.
 
 Helm templates are not YAML: `{{ include "x" . }}` is a function call to Helm and a flow mapping to
-a
-parser, so `yaml.safe_load` refuses every file here. `helm template` would resolve that and helm is
-not installed on the authoring machine, which is the whole reason the contract tier exists.
+a parser, so `yaml.safe_load` refuses every file here. `helm template` would resolve that and helm
+is not installed on the authoring machine, which is the whole reason the contract tier exists.
 
 So this file does two things. Most assertions run against a **pseudo-render**: control lines
-dropped,
-injected blocks dropped, inline expressions replaced by a placeholder. What survives parses as YAML
-and
-carries the document structure — kinds, containers, ports, probes, strategies — which is enough to
-navigate rather than grep. The rest are text-level, for the blocks the pseudo-render necessarily
-removes: `resources` and `securityContext` arrive through `toYaml` and are not visible to it.
+dropped, injected blocks dropped, inline expressions replaced by a placeholder. What survives parses
+as YAML and carries the document structure — kinds, containers, ports, probes, strategies — which is
+enough to navigate rather than grep. The rest are text-level, for the blocks the pseudo-render
+necessarily removes: `resources` and `securityContext` arrive through `toYaml` and are not visible
+to it.
 
 **The pseudo-render is an approximation and is not rendering.** A template that parses here can
 still fail `helm template`: a mis-scoped `.` inside a `define`, a `nindent` off by two, a `range`
-over
-the wrong collection. It catches structure and cannot catch semantics; `helm lint` in CI covers the
-rest, and `test_the_pseudo_render_would_catch_a_broken_template` shows the class this does catch.
+over the wrong collection. It catches structure and cannot catch semantics; `helm lint` in CI covers
+the rest, and `test_the_pseudo_render_would_catch_a_broken_template` shows the class this does
+catch.
 
 **One limit is sharp enough to name.** Dropping control lines means conditionals are not evaluated,
-so
-a field guarded by `{{- if }}` appears unconditionally present. Every assertion here about a field
-being *present* is therefore sound, and no assertion about a field being *absent* can be: absence
-has
-to be argued from the guard, in text, which
+so a field guarded by `{{- if }}` appears unconditionally present. Every assertion here about a
+field being *present* is therefore sound, and no assertion about a field being *absent* can be:
+absence has to be argued from the guard, in text, which
 `test_the_autoscaled_deployment_guards_its_replica_count` does. This was learned by writing the
 absence assertion first and watching it fail against a template that was correct.
 """
@@ -176,8 +172,7 @@ def test_a_single_replica_on_one_volume_replaces_rather_than_rolls(
 
     The new pod cannot mount a volume the old one still holds, and the old one is not asked to leave
     until the new one is Ready. The symptom is a Pending pod and an unchanged Deployment, with
-    nothing
-    in either object saying why.
+    nothing in either object saying why.
     """
     mounts_a_claim = any(
         (volume.get("persistentVolumeClaim") or {}).get("claimName")
@@ -196,15 +191,13 @@ def test_the_autoscaled_deployment_guards_its_replica_count() -> None:
     """A Deployment with a fixed `replicas` and an HPA fight on every reconcile.
 
     Helm reapplies the chart's number, the autoscaler reapplies its own, and the pod count
-    oscillates
-    for reasons neither object explains. The field has to be *absent* when the HPA is on, not merely
-    equal to minReplicas.
+    oscillates for reasons neither object explains. The field has to be *absent* when the HPA is on,
+    not merely equal to minReplicas.
 
     Argued from the guard rather than from the pseudo-render, and that is a limitation rather than a
     preference: dropping control lines means a conditional field looks unconditionally present, so
     this technique can never show a field absent. The first version of this test asserted absence
-    and
-    failed against a template that was correct.
+    and failed against a template that was correct.
     """
     autoscaled = [path for path, _ in objects_of("HorizontalPodAutoscaler")]
     assert autoscaled, "no HorizontalPodAutoscaler found, so this test proves nothing"
@@ -225,8 +218,7 @@ def test_every_service_targets_a_port_its_workload_defines() -> None:
     """A `targetPort` naming a port no container declares produces a Service with no endpoints.
 
     Nothing errors: `kubectl get svc` looks correct, and every request fails. This is the cross-
-    object
-    check the pseudo-render exists to make possible — a grep cannot relate two documents.
+    object check the pseudo-render exists to make possible — a grep cannot relate two documents.
     """
     declared: dict[str, set[str]] = {}
     for _, deployment in objects_of("Deployment"):
@@ -312,8 +304,7 @@ def test_every_container_declares_resources_and_a_security_context(path: Path) -
     """Text-level, because both arrive through `toYaml` and the pseudo-render drops what it injects.
 
     Weaker than the structural checks above and worth having anyway: a container with no resources
-    is
-    unschedulable in a namespace with a quota and invisible to an autoscaler, and one with no
+    is unschedulable in a namespace with a quota and invisible to an autoscaler, and one with no
     securityContext runs as whatever its image chose.
     """
     text = path.read_text(encoding="utf-8")
@@ -329,8 +320,7 @@ def test_no_template_hardcodes_an_image_or_a_pull_policy(path: Path) -> None:
     """Both come from values, because both are what EKS has to change.
 
     A literal image reference in a template is the thing that makes "same charts on EKS" false, and
-    it
-    is invisible until somebody tries.
+    it is invisible until somebody tries.
     """
     text = path.read_text(encoding="utf-8")
     for number, line in enumerate(text.splitlines(), start=1):

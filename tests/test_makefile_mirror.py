@@ -64,10 +64,8 @@ def test_no_wait_is_left_unbounded() -> None:
 
     Something that never reports healthy then hangs the job until an outside force kills it, and
     whatever kills it takes the logs with it, so the one artefact that would have said what failed
-    is
-    the one that goes missing. True of `compose up --wait` and of `helm upgrade --wait` alike, which
-    is
-    why the flag list has two entries rather than one.
+    is the one that goes missing. True of `compose up --wait` and of `helm upgrade --wait` alike,
+    which is why the flag list has two entries rather than one.
     """
     for name in ("Makefile", "make.ps1"):
         text = (REPO_ROOT / name).read_text(encoding="utf-8")
@@ -471,10 +469,8 @@ def test_both_entrypoints_target_the_same_cluster_with_the_same_add_ons() -> Non
     """Two node images or two namespaces means one entrypoint deploys where nobody is looking.
 
     The node image matters most: it and the kind binary are a matched pair, so an entrypoint pinning
-    a
-    different one produces a cluster whose API server version differs from the other's, and a
-    manifest
-    that applies on one machine can be rejected on the other.
+    a different one produces a cluster whose API server version differs from the other's, and a
+    manifest that applies on one machine can be rejected on the other.
     """
     makefile = cluster_settings("Makefile")
     powershell = cluster_settings("make.ps1")
@@ -493,10 +489,8 @@ def test_the_kind_node_image_is_pinned_by_digest() -> None:
     """A node image is where the cluster's Kubernetes version comes from.
 
     Unpinned, `kind create` follows whatever the installed kind defaults to, so the cluster the
-    chart
-    was tested against and the one a reviewer gets are different clusters. Pinned by digest as well
-    as
-    tag, for the reason record 018 gives about every other image here.
+    chart was tested against and the one a reviewer gets are different clusters. Pinned by digest as
+    well as tag, for the reason record 018 gives about every other image here.
     """
     image = cluster_settings("Makefile")["KIND_NODE_IMAGE"]
     assert "@sha256:" in image, f"the kind node image is not digest-pinned: {image}"
@@ -516,8 +510,7 @@ def test_kind_deploy_loads_the_locally_built_image() -> None:
     """A kind node has its own image store and cannot pull an image that exists only locally.
 
     Without `kind load` the MLflow pod sits in ImagePullBackOff naming an image `docker images`
-    shows
-    on the very same machine, which is among the more confusing failures kind produces.
+    shows on the very same machine, which is among the more confusing failures kind produces.
     """
     for name in ("Makefile", "make.ps1"):
         text = (REPO_ROOT / name).read_text(encoding="utf-8")
@@ -685,8 +678,7 @@ def test_the_database_cache_is_shared_across_documents() -> None:
 
     Six documents, six downloads of a database measured in hundreds of megabytes. Asserted rather
     than left to review because the failure is invisible in the result: the scan is correct but
-    slow,
-    and slow is what stops it being run.
+    slow, and slow is what stops it being run.
     """
     for name in ("Makefile", "make.ps1"):
         assert "GRYPE_DB_CACHE_DIR" in scan_body(name), (

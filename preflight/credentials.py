@@ -117,11 +117,10 @@ def missing_credentials(
     """Which variables the spine would refuse to start without.
 
     Required is read out of the example file rather than restated here, so a variable added to the
-    spine cannot be remembered in one place and forgotten in the other. Satisfied means a
-    non-empty value in ``.env`` *or* in the process environment, because compose reads both and
-    exporting the variables instead of writing them to a file is a supported choice rather than a
-    workaround: a guard that only looked for the file would skip on a machine that was in fact
-    ready.
+    spine cannot be remembered in one place and forgotten in the other. Satisfied means a non-empty
+    value in ``.env`` *or* in the process environment, because compose reads both and exporting the
+    variables instead of writing them to a file is a supported choice rather than a workaround: a
+    guard that only looked for the file would skip on a machine that was in fact ready.
     """
     required = set(parse_env_pairs(example_text))
     satisfied = {name for name, value in parse_env_pairs(env_text or "").items() if value}
@@ -142,10 +141,9 @@ def fingerprint(salt: str, user: str, password: str) -> str:
     """The digest the first initialisation recorded, recomputed from the values in hand.
 
     Salted, and the salt is generated inside the volume at that first initialisation. An unsalted
-    digest of a credential pair is a password oracle for whoever can read the file, and this file
-    is written into a volume reviewers are explicitly invited to keep. The salt buys nothing
-    against someone holding the file and one good guess; it buys everything against a precomputed
-    table.
+    digest of a credential pair is a password oracle for whoever can read the file, and this file is
+    written into a volume reviewers are explicitly invited to keep. The salt buys nothing against
+    someone holding the file and one good guess; it buys everything against a precomputed table.
 
     Must stay byte-identical to what postgres/init/00-record-init-credentials.sh computes, which is
     why both sides join with a colon and neither appends a newline.

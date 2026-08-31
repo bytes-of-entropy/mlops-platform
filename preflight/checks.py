@@ -61,8 +61,7 @@ class Inputs:
     """What the checks read. Injected rather than gathered, so a test can construct any state.
 
     ``read_volume`` is a callable and not a value because it starts a container: on a machine with
-    no daemon, or with no credentials to render the compose file with, it must not be called at
-    all.
+    no daemon, or with no credentials to render the compose file with, it must not be called at all.
     """
 
     docker_state: str

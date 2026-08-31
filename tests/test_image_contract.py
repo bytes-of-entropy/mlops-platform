@@ -1,9 +1,8 @@
 """The built image's hardening properties, asserted by reading the Dockerfile.
 
 Three of M1's four hardening items need a daemon and a registry. One needs only a text file, and
-that one is checkable everywhere: which user the image ends as, whether any base names a moving
-tag, whether the pip installs pin, and whether a wheel cache is left in a layer. Record 017 argues
-each.
+that one is checkable everywhere: which user the image ends as, whether any base names a moving tag,
+whether the pip installs pin, and whether a wheel cache is left in a layer. Record 017 argues each.
 
 The reason to read rather than to run is the same reason Repo 1 asserts its dependency direction by
 parsing an AST: a property checked only by the machine that has Docker is unchecked on every machine
