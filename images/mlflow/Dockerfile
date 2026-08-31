@@ -51,7 +51,13 @@ USER mlflow
 # plumbing a build argument through compose and making `make build` depend on git state, which an
 # extracted tarball does not have. The digest of each pushed image is recorded against its commit in
 # docs/decisions/023 instead, which ties the two together without making the build read the repository.
+# `licenses` names the terms of what this repository contributes, and not an audit of everything the
+# image contains. The OCI spec asks for an expression covering the contained software, which here means
+# MLflow, a Debian base and every transitive dependency of two pip installs -- at least one of which,
+# psycopg2, is copyleft. Asserting a precise-looking expression nobody has checked would be worse than
+# asserting a narrow one: the record of what is actually inside is the committed inventory under sbom/,
+# and reconciling the two into one aggregate expression is a job for before the image is published.
 LABEL org.opencontainers.image.source="https://github.com/bytes-of-entropy/mlops-platform" \
       org.opencontainers.image.title="mlops-platform mlflow" \
       org.opencontainers.image.description="MLflow tracking server with a Postgres driver and an S3 client" \
-      org.opencontainers.image.licenses="MIT"
+      org.opencontainers.image.licenses="Apache-2.0"

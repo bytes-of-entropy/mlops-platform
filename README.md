@@ -333,6 +333,15 @@ Chose the friction.
 Nothing. Everything here runs locally. The cloud footprint in `infra/` arrives at M3, is destroyed in
 the same session it is created, and its spend is reported in the run log rather than estimated.
 
+## Licence
+
+Apache-2.0. See [`LICENSE`](LICENSE) for the full text and [`NOTICE`](NOTICE) for the copyright line.
+
+Apache rather than MIT for the patent grant. This repository invites other people to run what it
+builds, and a permissive licence with no patent clause leaves that invitation incomplete. The one
+image built here carries `org.opencontainers.image.licenses`, which names these terms and is not an
+audit of everything inside the image; the record of that is the committed inventory under `sbom/`.
+
 ## Confidentiality
 
 Everything in this repository was built fresh on public and generated data. No employer material,

@@ -7,6 +7,12 @@ name = "mlops-platform"
 version = "0.1.0"
 description = "Local-first MLOps spine: compose, images, charts, infra"
 requires-python = ">=3.11,<3.13"
+# Apache-2.0 rather than MIT for the patent grant: this repository publishes container images
+# and a chart that other people are invited to run, and a permissive licence with no patent
+# clause leaves that invitation incomplete. `{text = ...}` rather than the bare SPDX string
+# because the pinned setuptools predates PEP 639 and rejects the newer form.
+license = { text = "Apache-2.0" }
+classifiers = ["License :: OSI Approved :: Apache Software License"]
 # `supply.images` reads the compose file to build the cataloguer's image list, and both entrypoints
 # call it, so this stopped being a test-only need. Pinned to the version the dev extra already held
 # rather than to a range: the two must not resolve differently on one machine.
