@@ -40,7 +40,7 @@ spec:
         app.kubernetes.io/component: mlflow
     spec:
       securityContext:
-        {{- toYaml .Values.mlflow.securityContext | nindent 8 }}
+        {{- toYaml .Values.mlflow.podSecurityContext | nindent 8 }}
       # The bucket MLflow's artifact root names, created before MLflow can be asked for it.
       #
       # An initContainer rather than a `post-install` hook Job, and record 015 is why this is not a

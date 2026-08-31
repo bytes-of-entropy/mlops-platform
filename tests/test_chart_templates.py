@@ -362,3 +362,74 @@ def test_the_pseudo_render_would_catch_a_broken_template() -> None:
     )
     with pytest.raises(yaml.YAMLError):
         yaml.safe_load(pseudo_render(broken))
+
+
+#: Fields `PodSecurityContext` does not have. Setting one there is not a style question: the API
+#: server rejects an unknown field under strict validation and drops it under lenient, so the same
+#: chart is either an install failure or a container quietly keeping a capability it said it drops.
+CONTAINER_ONLY = ("allowPrivilegeEscalation", "capabilities", "readOnlyRootFilesystem")
+
+#: And the reverse. `fsGroup` at container level does nothing at all, which is worse than failing,
+#: because the volume permissions it was meant to fix stay broken with the field apparently set.
+POD_ONLY = ("fsGroup", "fsGroupChangePolicy", "supplementalGroups")
+
+
+def chart_values() -> dict[str, Any]:
+    """`values.yaml` is real YAML, unlike the templates, so it loads without any of the above."""
+    loaded = yaml.safe_load((CHART_DIR / "values.yaml").read_text(encoding="utf-8"))
+    assert isinstance(loaded, dict)
+    return loaded
+
+
+def values_reference(line: str) -> str | None:
+    """The `.Values.a.b` path a `toYaml` line reads, if it reads one."""
+    match = re.search(r"\.Values\.([A-Za-z0-9_.]+)", line)
+    return match.group(1) if match else None
+
+
+def resolve(path: str) -> dict[str, Any]:
+    node: Any = chart_values()
+    for part in path.split("."):
+        node = node[part]
+    assert isinstance(node, dict), f".Values.{path} is not a mapping"
+    return node
+
+
+@pytest.mark.parametrize("path", templates(), ids=lambda p: p.name)
+def test_no_security_context_is_applied_at_the_wrong_level(path: Path) -> None:
+    """Kubernetes has two security contexts and they do not take the same fields.
+
+    The overlap is the three `runAs*` fields, and that overlap is the trap: one map looks like it
+    can serve both levels, so a template reaches for the container's map to fill the pod's slot and
+    nothing complains until a cluster sees it. `helm lint` will not catch it either — helm does not
+    validate against the API schema — so it fails at `helm install`, which on the build machine is
+    eight minutes of cluster setup away.
+
+    Found exactly that way in `mlflow.yaml`, which applied its container context to the pod. Argued
+    from indentation rather than from the pseudo-render, because both levels use the same key name
+    and only the depth distinguishes them.
+    """
+    lines = path.read_text(encoding="utf-8").splitlines()
+    for number, line in enumerate(lines, start=1):
+        if line.strip() != "securityContext:":
+            continue
+        depth = len(line) - len(line.lstrip())
+        following = lines[number] if number < len(lines) else ""
+        reference = values_reference(following)
+        if reference is None:
+            continue
+        fields = resolve(reference)
+        # Six spaces is a pod's, ten a container's: `spec` sits at four under `template`, its keys
+        # at six, a list item at eight and that item's keys at ten. Asserted rather than assumed --
+        # this started at eight and twelve, and the assertion is what said so rather than the test
+        # quietly reading a container as a pod and passing.
+        assert depth in (6, 10), f"{path.name}:{number} securityContext at unexpected depth {depth}"
+        at_pod_level = depth == 6
+        forbidden = CONTAINER_ONLY if at_pod_level else POD_ONLY
+        present = sorted(field for field in forbidden if field in fields)
+        level = "pod" if at_pod_level else "container"
+        assert not present, (
+            f"{path.name}:{number} sets {present} on a {level} securityContext, from "
+            f".Values.{reference}; those fields do not exist at that level, so the API server "
+            f"either rejects the object or drops them without saying so"
+        )

@@ -61,6 +61,15 @@ mlflow:
     limits:
       cpu: "1"
       memory: 1Gi
+  # Two contexts, because Kubernetes has two and they take different fields. `PodSecurityContext` has
+  # no `capabilities` and no `allowPrivilegeEscalation`; `SecurityContext` has no `fsGroup`. The
+  # overlap is the three `runAs*` fields, which is what makes one map look like it can serve both --
+  # and it cannot, so this component has no `fsGroup` because it mounts no volume, and its container
+  # fields stay out of the pod.
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
   securityContext:
     runAsNonRoot: true
     runAsUser: 10001
