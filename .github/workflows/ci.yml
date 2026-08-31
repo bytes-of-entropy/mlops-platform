@@ -99,4 +99,10 @@ jobs:
         # Also run in the contract job, and cheap. Kept here so a helm-only failure and a
         # chart-assertion failure land in the same place, rather than one job saying the chart
         # renders and another saying its values are wrong.
+        #
+        # test_rendered_chart.py is the reason the order matters: it reads .rendered/, which the
+        # step above produces, and skips by name when nothing has. This is the only job where those
+        # assertions can run, because they are the ones that need helm to have resolved the
+        # conditionals first -- every claim about a field being *absent* lives there.
         run: .venv/bin/python -m pytest tests/test_chart_contract.py tests/test_chart_templates.py
+          tests/test_rendered_chart.py -v
