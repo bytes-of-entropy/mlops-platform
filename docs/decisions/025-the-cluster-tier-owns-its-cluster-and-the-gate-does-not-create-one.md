@@ -229,3 +229,33 @@ rather than the instance.
 **What M2 still owes: nothing the tier can show.** The criteria are met. What is unproven is the
 documented path -- `make kind-deploy` has never once installed the chart end to end -- and closing that
 is a re-run rather than new work.
+
+## Prediction scored, 2026-08-31 (third run): the mirror closes, and prediction 1 is finally spent
+
+`make kind-deploy` installed the chart end to end -- three Deployments Running in 138 seconds -- and the
+Ingress answered `status: 200`. M2's criteria are now met by both paths, the tier's and the documented
+one, which is what the milestone actually asked for.
+
+**Prediction 1 is scored a third time and is now closed.** It said the first failure would be in cluster
+setup rather than in the chart, and it was right three times running, on three different defects: a
+stderr redirect, an inline JSON argument, and -- caught by audit rather than by a run -- a namespace
+deleted and recreated against its own finalizers. All three were PowerShell, none was Kubernetes, and the
+chart was never the subject. The prediction has no remaining content: the setup path is exercised and
+green, so there is nothing left for it to be right about.
+
+**What the audit bought, stated plainly because it is the argument for auditing.** The third defect was
+never hit by a run. It would have been hit by this one -- `kind-up` reuses an existing cluster, and a
+second `kind-deploy` against one is exactly the case that races the finalizers. Fixing it cost an hour of
+reading; discovering it would have cost this run and the one after it. Two defects found one-per-run is
+what made the audit worth doing, and the audit is what stopped the third from being a fourth run.
+
+**The render assertions ran for the first time: 19 passed.** Ten of those are the synthetic checks that
+run anywhere, and nine are the absence claims that needed helm to resolve the conditionals first -- no
+Secret rendered, no credential-shaped variable carrying a literal value, no `replicas` beside an HPA,
+nothing pulling `Always`, and `$(POSTGRES_PASSWORD)` surviving as those characters rather than being
+resolved into the manifest. The split between those two halves is what made them worth trusting on their
+first execution, which is the lesson the four tier defects taught.
+
+**M2 is closed at `v0.3.0`.** What it does not include is unchanged and still worth naming: EKS
+portability, which the chart's structure supports and nothing here tests, and the GHCR push, which
+record 023 sequences after the repository publishes.

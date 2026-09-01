@@ -4,8 +4,8 @@ The local-first platform the two flagship repositories deploy onto: a Spark clus
 object storage, an MLflow tracking server, a scheduler and a metadata database, all reproducible on
 one machine, and the Kubernetes and Terraform footprint they run on in the cloud.
 
-**Status: M0 closed at `v0.1.0`, M1 closed at `v0.2.0`. M2's chart is written and has never been
-installed.** Two claims here are demonstrated and one is not, and the difference is the point of this
+**Status: M0 closed at `v0.1.0`, M1 at `v0.2.0`, M2 at `v0.3.0`. Scope freezes here; the next thing
+this repository does is publish.** Two claims here are demonstrated and one is not, and the difference is the point of this
 paragraph.
 
 **Demonstrated.** The compose spine, its contract suite, a preflight that refuses a start which would
@@ -44,19 +44,26 @@ that ran rather than parsed:
 | HPA scales under load | **yes** — the replica count rises above one under load from three pods, inside the 240-second budget |
 | charts versioned so a flagship pins a release | **yes**, `0.1.0`, orderable, asserted |
 
-**The cluster tier is green: `7 passed, 0 skipped in 192s`.** It took two runs. The first found four
-defects, all in *this repository* rather than in the chart — a PowerShell stderr redirect, a load
-generator assembled with semicolons around a `def`, a credential check matching the release name as a
-substring, and an assertion looking for quotes `print` does not emit — and the second confirmed all four
-fixed and scored the HPA criterion no run had previously exercised.
+**The cluster tier is green: `7 passed, 0 skipped`.** The first run found four defects, all in *this
+repository* rather than in the chart — a load generator assembled with semicolons around a `def`, so it
+was invalid Python and no pod ever made a request; a credential check matching the release name as a
+substring; an assertion looking for quotes `print` does not emit; and a 503 since recorded as a race. Two
+of those four were wrong about their own text rather than about the cluster, which is why the render
+assertions added afterwards are split into ten checks that run on any machine and nine that need helm:
+an assertion whose first execution is on the build machine is one nobody has checked. Those nine ran for
+the first time in the third run and passed.
 
-**M2 stays open on one thing, and it is not the chart.** `make kind-deploy` has still never installed the
-chart end to end. It failed a second time on a second PowerShell defect: `kubectl patch -p` with inline
-JSON, which PowerShell 5.1 cannot hand to a native executable with its quotes intact. The tier ran the
-identical patch through Python's argv and succeeded. Twice now the tier has passed while the documented
-target failed, both times for a reason belonging to PowerShell rather than to Kubernetes — which is what
-you get from a tier that deliberately does not use the mirror. The patch is now a file both entrypoints
-pass by path.
+**M2 is closed, tagged `v0.3.0`, and it took three runs to get the documented path there.** The chart was
+never the subject of any of them. `make kind-deploy` failed twice on Windows PowerShell — a stderr
+redirect that turns a native command's zero exit into a thrown error, then an inline JSON argument whose
+quotes do not survive the handoff to a native executable — while the cluster tier, which builds argv from
+Python, ran the identical operations and passed. A third defect of the same family was found by auditing
+the file rather than by running it, and would have broken this run: a namespace deleted and recreated
+against its own finalizers.
+
+That is the standing cost of a tier that deliberately does not use the mirror, and it is written down as
+such in [`docs/decisions/025`](docs/decisions/025-the-cluster-tier-owns-its-cluster-and-the-gate-does-not-create-one.md)
+rather than logged as three accidents. Five assertions now hold the class textually, on a laptop.
 
 What that run did settle: the non-root `fsGroup` values were right, the initContainer created the bucket
 and S3 confirmed it from inside the pod, the credential never reached the rendered manifest, and Helm
