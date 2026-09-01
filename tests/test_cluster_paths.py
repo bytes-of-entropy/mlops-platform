@@ -137,3 +137,31 @@ def test_the_metrics_patch_says_what_kubectl_needs_it_to_say() -> None:
     assert operation["op"] == "add", operation
     assert operation["path"] == "/spec/template/spec/containers/0/args/-", operation
     assert operation["value"] == "--kubelet-insecure-tls", operation
+
+
+def test_neither_entrypoint_deletes_the_namespace_before_creating_it() -> None:
+    """Namespace deletion is asynchronous, so delete-then-create is a race rather than a reset.
+
+    The object sits in Terminating while its finalizers run, and a create behind a delete fails with
+    "object is being deleted". make.ps1 did exactly that and it never surfaced, because every run so
+    far met a cluster with no such namespace -- a second kind-deploy against one cluster is where it
+    would have. The Makefile was never exposed: it applies the namespace idempotently and deletes
+    nothing.
+
+    A secret is different and is deliberately not covered here: it carries no finalizers, deletes
+    immediately, and has no apply form without rendering YAML, so delete-then-create suits it.
+    """
+    for name in ("Makefile", "make.ps1"):
+        text = (REPO_ROOT / name).read_text(encoding="utf-8")
+        offenders = [
+            line.strip()
+            for line in text.splitlines()
+            if not line.lstrip().startswith("#")
+            and "delete" in line
+            and "namespace" in line
+            and "kind delete cluster" not in line
+        ]
+        assert not offenders, (
+            f"{name} deletes a namespace: {offenders}. Deletion is asynchronous, so anything "
+            f"creating it again immediately afterwards races the finalizers"
+        )

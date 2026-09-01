@@ -320,16 +320,29 @@ switch ($Target) {
         Invoke-Checked 'kind' @(
             'load', 'docker-image', '--name', $KindCluster, "mlops-platform/mlflow:$MlflowTag"
         )
-        # Delete-then-create rather than the Makefile's `--dry-run=client -o yaml | kubectl apply`.
-        # Same effect, deliberately different mechanism: piping YAML through PowerShell puts an
-        # encoding decision between kubectl and kubectl, and this project has already lost bytes that
-        # way. --ignore-not-found makes both halves safe to re-run.
-        foreach ($kind in @('namespace', 'secret')) {
-            $target = if ($kind -eq 'namespace') { $K8sNamespace } else { 'mlops-platform-credentials' }
-            $scope = if ($kind -eq 'namespace') { @() } else { @('-n', $K8sNamespace) }
-            & kubectl @('--context', $context) @scope @('delete', $kind, $target, '--ignore-not-found') | Out-Null
+        # The namespace is created only if absent, and is never deleted. The Makefile reaches the same
+        # end with `create --dry-run=client -o yaml | kubectl apply -f -`, which this cannot copy:
+        # piping YAML through PowerShell puts an encoding decision between kubectl and kubectl, and
+        # this project has already lost bytes that way.
+        #
+        # Delete-then-create is what stood here, and it is a race rather than a style difference.
+        # Namespace deletion is asynchronous -- the object sits in Terminating while finalizers run --
+        # so a create immediately behind a delete fails with "object is being deleted". It never
+        # surfaced because every run so far met a cluster with no such namespace, and the second
+        # `kind-deploy` against one cluster is where it would have.
+        $existingNamespace = & kubectl @('--context', $context, 'get', 'namespace', $K8sNamespace,
+            '--ignore-not-found', '-o', 'name')
+        if (-not $existingNamespace) {
+            Invoke-Checked 'kubectl' @('--context', $context, 'create', 'namespace', $K8sNamespace)
         }
-        Invoke-Checked 'kubectl' @('--context', $context, 'create', 'namespace', $K8sNamespace)
+        # The secret, unlike the namespace, has no finalizers and deletes immediately, and there is no
+        # `apply` for one without rendering YAML. Delete-then-create is therefore correct here, and
+        # checked rather than swallowed: with --ignore-not-found an absent secret exits zero, so a
+        # non-zero exit is a real failure and used to disappear into Out-Null.
+        Invoke-Checked 'kubectl' @(
+            '--context', $context, '-n', $K8sNamespace,
+            'delete', 'secret', 'mlops-platform-credentials', '--ignore-not-found'
+        )
         # --from-env-file, never --from-literal: a literal puts the credential in the command line,
         # where it reaches the process table and the shell history.
         Invoke-Checked 'kubectl' @(
