@@ -273,3 +273,62 @@ against each other rather than one being right: drop `minio-init`'s `build:` and
 from an earlier `up`; disable provenance and get deterministic digests at the cost of an attestation this
 repository's supply-chain story arguably wants; or accept it and say so here. The comment in compose is
 corrected to describe what actually happens either way, since it currently asserts something false.
+
+## Prediction scored, 2026-08-31 (the package page): 3 holds, and its diagnostic does not
+
+The package landed **private**, so prediction 3 is confirmed on its conclusion. Its mechanism is a
+different story, and so is the sentence this record wrote for whoever hit the problem.
+
+**The prediction reasoned from a pre-publish push and this was a post-publish one.** It expected private
+because no `source` label could link a package to a repository that did not yet exist. By the time the push
+happened the repository was public and the label named it correctly. The package was still private.
+
+**`Inherit access from repository` was already on, and inheriting still did not happen.** That is the
+finding, because it explains the private badge better than "GHCR defaults to private" does: the package was
+not linked to any repository, so there was nothing for it to inherit from. The setting was on and idle.
+Linkage is upstream of inheritance, and this record treated them as one thing.
+
+### The diagnostic this record gave is false and has been removed
+
+It said that a package which is not linked "has the wrong `source` label or the repository name changed".
+Both were checked and both were right. `images/mlflow/Dockerfile` carries
+`org.opencontainers.image.source="https://github.com/bytes-of-entropy/mlops-platform"`, and that is the
+repository, spelled correctly. So the sentence would have sent a reader to audit a label that was already
+correct, which is worse than saying nothing: a confident wrong diagnostic costs more than an absent one.
+The repository was connected by hand instead, from the package's settings page, and that worked.
+
+### Why the label did not do it: two live explanations, neither excluded
+
+**Nothing in this repository verifies that the label reaches the image.** A mirror test asserts the
+Dockerfile contains it, and that is the whole chain: Dockerfile has the label, asserted; image carries the
+label, *unverified*; registry reads it and links, failed. The middle link has never been checked, so:
+
+1. **The label is not in the pushed image's config.** Cheap to exclude and not yet excluded.
+2. **The label is present and GHCR did not read it, because the pushed artifact is an index rather than an
+   image.** This push exported a manifest list plus an attestation manifest, and an index has no single
+   config for a label to live in.
+
+Hypothesis 2 is the more interesting one because it makes the attestation behaviour recorded above the
+cause of *two* separate problems rather than one -- the irreproducible digest and the failed link -- and
+because it would mean the fix for the first also fixes the second. That is exactly the reasoning that
+should not be trusted before it is tested. Two hypotheses about a syft failure earlier the same day were
+both wrong, and the appeal of a single explanation for two symptoms is not evidence for it.
+
+**The discriminator is one command** on a machine that has built the image:
+
+```
+docker image inspect --format '{{json .Config.Labels}}' mlops-platform/mlflow:2.22.4
+```
+
+If the label is absent, hypothesis 1 is the answer and the Dockerfile or the build is at fault. If it is
+present, hypothesis 1 is excluded and 2 becomes worth testing.
+
+**Testing 2 is harder than it looks, and that is worth writing down now.** The package is manually linked,
+so it cannot be used to observe an automatic link again. Confirming it would need a push of a
+single-manifest image to a package name that has never existed, and then reading whether *that* one links
+itself. That is a deliberate experiment against a throwaway package rather than something the next push
+answers for free, and it is optional: the repository is linked, the visibility is correct, and the cost of
+being wrong about the mechanism is a paragraph in a record rather than a broken artifact.
+
+**What is not in doubt** is that the manual connect is a step, not a workaround for a defect. `PUBLISH.md`
+now says so, because the alternative is a runbook that describes a normal outcome as a fault.
