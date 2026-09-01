@@ -405,3 +405,76 @@ cannot be attributed to targets either -- both are fixed, and re-running costs a
 A filter written to observe one shape, applied to the shape it was meant to detect a change in. Worth
 naming rather than quietly fixing: the same run that excluded hypothesis 1 for good failed to answer the
 question it was designed around, because the instrument encoded the assumption under test.
+
+## Claim tested, 2026-08-31 (fixed instrument): provenance confirmed, and the layers were always fine
+
+The filter from the previous section, corrected to match `exporting manifest` rather than `exporting
+manifest list` and to keep the `[target]` prefixes. The same four builds, now legible.
+
+**With attestations on, across two builds:**
+
+```
+pass 1   [minio-init]  manifest 0c27cd2d   index c60082ec
+         [mlflow]      manifest 45e78a9d   index 98b874b9
+pass 2   [minio-init]  manifest 0c27cd2d   index 110aec95
+         [mlflow]      manifest 45e78a9d   index 4f7fe211
+```
+
+**With attestations off, across two builds:** `0c27cd2d` and `45e78a9d`, no index at all, both passes.
+
+**The image manifests never moved and every index digest did.** They also match the manifests from the
+original push run hours earlier -- `0c27cd2d` and `45e78a9d` there too. So the provenance-timestamp
+explanation is confirmed, and the more useful way to state the result is the inverse of how this record
+kept framing it: **the layers were always reproducible.** What was never reproducible was the index
+wrapping them, because a provenance attestation records when the build ran. Three runs, six exports per
+state, no exceptions.
+
+That retires "the built image's digest is not reproducible" as stated twice above. The image's digest is
+reproducible and always was. The *published* digest was not, because what got published was an index.
+
+**So both entrypoints now build with `BUILDX_NO_DEFAULT_ATTESTATIONS=1`**, overridable, with a mirror test
+holding the parity -- a setting honoured on one platform and ignored on the other would have two machines
+publish two digests for identical layers, each looking like the other had changed something.
+
+### Prediction (recorded before the next push)
+
+1. A `make push` from either entrypoint now reports a digest equal to the manifest the build exported,
+   stable across rebuilds of the same commit. Confidence: high, and the specific value is predicted below.
+2. The committed inventories under `sbom/` do not change. Confidence: high. The layers are identical, and
+   record 019 commits package lists rather than digests precisely so that image identity churn cannot move
+   them. CI's `git diff --exit-code -- sbom/` is the check and it costs nothing to watch.
+3. The published digest is `sha256:45e78a9d...` **if mlflow exported last, and `sha256:0c27cd2d...` if
+   minio-init did.** Confidence: high that it is one of the two, low on which. That is not a hedge; it is
+   the next finding.
+
+### The duplicate build survives the fix, and removing it is not safe
+
+Turning off attestations does not make the two exports agree. `0c27cd2d` and `45e78a9d` are stable but
+**different from each other**, and both name `mlops-platform/mlflow:2.22.4`. The reason is now visible in
+the labels read in the same run: compose stamps `com.docker.compose.service` into each image it builds, so
+minio-init's copy says `minio-init` and mlflow's says `mlflow`. Identical layers, one differing label, two
+digests.
+
+**Export order is not fixed, and this run observed it flip.** With attestations off, pass 1 exported mlflow
+as `#10` and minio-init as `#11`; pass 2 reversed them. The later export wins the tag. So which of the two
+images `docker compose up` runs, and which one `make push` publishes, varies between builds on one machine
+with no source change. Nothing behaves differently -- the entrypoint is overridden per service at run time
+-- but the published digest is decided by a race.
+
+**And the obvious fix is unsafe, which is why it is not being applied.** Dropping `minio-init`'s `build:`
+key would leave one export and one digest. But `_build_context` in `tests/test_image_supply.py` and
+`_context` in `supply/images.py` both classify a service with no `build` key as **pulled**, and record 018
+requires every pulled reference to be digest-pinned -- which a locally built image cannot be. It would also
+move `mlops-platform/mlflow:2.22.4` into the SBOM's pulled list and change the committed inventories.
+
+So that duplicate `build:` key is load-bearing in a way its own comment never claimed: it is what keeps the
+shared tag classified as built. Two contract properties depend on it, and the comment beside it talked
+about `run minio-init` instead. Recorded here because the next person to see two builds of one tag will
+reach for exactly that deletion.
+
+**What remains open**, deliberately, as a smaller and better-understood question than when this section
+started: making `push` publish a known one of the two rather than whichever won the race. The cheap version
+is a guard -- `push` refuses unless the image it is about to publish carries
+`com.docker.compose.service=mlflow` -- which costs one assertion and no restructuring. Not applied in the
+same commit as the attestation change, because a fix and a guard against a different defect do not belong
+together, and because prediction 3 above is worth observing before it is prevented.

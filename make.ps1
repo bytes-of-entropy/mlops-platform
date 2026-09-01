@@ -32,6 +32,12 @@ $GrypeDbVolume = 'mlops-platform-grype-db'
 # Kept in step with the Makefile's GHCR_OWNER, GHCR_IMAGE and MLFLOW_TAG; a test fails if they
 # diverge, because two entrypoints pushing to two places is one of them publishing somewhere nobody
 # is looking.
+# Mirrors the Makefile's BUILDX_NO_DEFAULT_ATTESTATIONS, and the reasoning is there rather than
+# duplicated here: a provenance attestation makes the built image an index whose digest changes on
+# every build, while the image manifest inside it does not. Set only when the caller has not, so the
+# override works the same way on both platforms.
+if (-not $env:BUILDX_NO_DEFAULT_ATTESTATIONS) { $env:BUILDX_NO_DEFAULT_ATTESTATIONS = '1' }
+
 $GhcrOwner = 'bytes-of-entropy'
 $GhcrImage = "ghcr.io/$GhcrOwner/mlops-platform/mlflow"
 $MlflowTag = '2.22.4'

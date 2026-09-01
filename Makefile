@@ -53,6 +53,24 @@ GRYPE_DB_VOLUME ?= mlops-platform-grype-db
 # Where a published image goes. The owner is a variable because it is the one value here that belongs
 # to a person rather than to the project, and the path is nested under the repository name so a reader
 # of `ghcr.io/<owner>/mlops-platform/mlflow` can tell which repository produced it.
+# Buildx attaches a provenance attestation by default, which turns the built image into an index: a
+# manifest list holding the image plus the attestation. Measured on 2026-08-31, that is the sole source
+# of build non-determinism here. Across three separate runs the image manifests never moved --
+# `45e78a9d` for mlflow, `0c27cd2d` for minio-init -- while every index digest differed, because a
+# provenance attestation records when the build ran. So the layers were always reproducible and the
+# thing wrapping them never was.
+#
+# Turned off because two properties depend on it and nothing here depends on the attestation. Record
+# 023's table of published digests is only meaningful if a reader can rebuild the commit and get the
+# same digest, and record 018's argument for pinning by digest assumes a digest identifies content.
+# Nothing in this repository reads an attestation; the supply-chain claims rest on the committed
+# package inventories under sbom/ and the advisory baselines instead.
+#
+# Overridable, so a machine that wants attestations can have them by exporting 0 and accepting that
+# its digests will not match anyone else's.
+BUILDX_NO_DEFAULT_ATTESTATIONS ?= 1
+export BUILDX_NO_DEFAULT_ATTESTATIONS
+
 GHCR_OWNER      ?= bytes-of-entropy
 GHCR_IMAGE      ?= ghcr.io/$(GHCR_OWNER)/mlops-platform/mlflow
 MLFLOW_TAG      ?= 2.22.4

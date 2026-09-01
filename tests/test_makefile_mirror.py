@@ -408,6 +408,34 @@ def test_push_depends_on_build_rather_than_hoping_for_it() -> None:
     assert "build" in push_body("make.ps1"), "make.ps1's push does not build first"
 
 
+def test_both_entrypoints_build_without_attestations() -> None:
+    """A provenance attestation makes the built image an index with a fresh digest every build.
+
+    Measured across three runs on 2026-08-31: the image manifests never moved and every index digest
+    did, because the attestation records when the build ran. Two committed properties depend on that
+    not happening -- record 023's table of published digests is only checkable if rebuilding a
+    commit reproduces its digest, and record 018 pins by digest on the assumption that a digest
+    identifies content.
+
+    Asserted in both entrypoints because a setting honoured on one platform and ignored on the other
+    is worse than no setting: two machines would then publish two digests for identical layers and
+    each would look like the other had changed something.
+    """
+    makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+    assert re.search(r"^BUILDX_NO_DEFAULT_ATTESTATIONS\s*\?=\s*1$", makefile, re.MULTILINE), (
+        "the Makefile does not default BUILDX_NO_DEFAULT_ATTESTATIONS to 1"
+    )
+    assert re.search(r"^export BUILDX_NO_DEFAULT_ATTESTATIONS$", makefile, re.MULTILINE), (
+        "the Makefile sets BUILDX_NO_DEFAULT_ATTESTATIONS but never exports it, so no recipe sees "
+        "it"
+    )
+    mirror = (REPO_ROOT / "make.ps1").read_text(encoding="utf-8")
+    assert "$env:BUILDX_NO_DEFAULT_ATTESTATIONS = '1'" in mirror, (
+        "make.ps1 does not disable attestations, so Windows and Linux would publish different "
+        "digests"
+    )
+
+
 def test_push_reports_the_digest_of_the_reference_it_pushed() -> None:
     """A positional index into `RepoDigests` reports a real digest beside the wrong image.
 
