@@ -115,7 +115,12 @@ stays untested until the repository publishes.
 
 | commit | tag | digest |
 | --- | --- | --- |
-| _(none yet)_ | | |
+| `4f5f850` | `2.22.4` | `sha256:7d41f0696592d57e118e75cc21d55c4949c32f2a5ff64f1155bd672cd7c2bdde` |
+
+That digest is `ghcr.io/bytes-of-entropy/mlops-platform/mlflow@sha256:7d41f069...`, and it identifies
+**one build rather than a commit**. The distinction is not pedantry and the section below explains it:
+rebuilding `4f5f850` produces a different digest, so this row records what was published, not something a
+reader could regenerate and compare against.
 
 ## What would change my mind
 
@@ -172,3 +177,99 @@ a per-image licence pass, and a decision about whether a reviewer should pull th
 account or from upstream. It belongs in its own record, argued on availability, with
 `docs/OFFLINE_FIRST.md` as the place the requirement would come from — not dismissed here on grounds
 that do not hold.
+
+## Prediction scored, 2026-08-31: the push works, 4 is false, and the target misreported its own result
+
+The first and so far only run of `make push`, from the build machine against a public repository, after
+`docker login ghcr.io` with a classic token. It succeeded: ten layers pushed, the tag resolved, and the
+digest above is what the registry reported.
+
+**Prediction 1 is untested and stays that way.** It predicted the failure an operator sees on a clean
+session -- an authentication error naming `ghcr.io` rather than anything about tags. The operator logged in
+first, as instructed, so the unauthenticated path was never taken. Recording it as untested rather than
+quietly dropping it, because the next person to run this on a fresh machine gets the free observation.
+
+**Prediction 2 is consistent with the run, with one honest gap.** The token was created with
+`write:packages` and nothing else, and the push needed no more than that -- so `repo` and an explicit
+`read:packages` are indeed cargo-cult. The gap: the login is not in the captured output, which starts at
+the `make push` invocation, so the scope is what was instructed rather than what is evidenced. A push that
+needed more would have failed, which is most of the way there.
+
+**Prediction 3 is not yet answerable.** The package's visibility has not been read. Note also that the
+conditions changed underneath the prediction: it reasoned from a *pre-publish* push, where no source label
+could link the package to a repository that did not exist. This push happened after publication, so the
+link was available and the prediction's mechanism does not apply even if its conclusion does.
+
+**Prediction 4 is false, in the more interesting direction.** It said the digest printed for the GHCR
+reference would differ from any local digest for `mlops-platform/mlflow:2.22.4`, and that the local one
+would not exist at all, on the reasoning that a local build has no registry digest until it is pushed.
+Both halves are wrong. The local name carried a digest, and it was the *same* digest. The build output
+shows why: `exporting manifest list sha256:7d41f069...` is printed during the **build**, before any push.
+Under buildx with the containerd image store the manifest digest is computed from content at build time,
+so it is not conferred by a registry at all -- the push confirmed a digest that already existed.
+
+That does not overturn record 018's conclusion, which was to leave the built tag unpinned in compose, but
+it does retire the premise this record gave for it. The correct reason is the one below.
+
+### The target reported a real digest under the wrong image
+
+`make push` printed:
+
+```
+mlops-platform/mlflow@sha256:7d41f0696592d57e118e75cc21d55c4949c32f2a5ff64f1155bd672cd7c2bdde
+```
+
+The digest is right. The reference is not: it names `mlops-platform/mlflow`, which docker normalises to
+`docker.io/mlops-platform/mlflow`, where no such image exists. Both entrypoints read
+`--format '{{index .RepoDigests 0}}'`, and a locally built image that has been pushed carries a digest for
+its local name as well as for the pushed one. The order is not defined and index 0 was the local one.
+
+**The failure shape is why this is now a test.** Nothing exited non-zero, no step failed, and the value
+beside the wrong name was correct, so the only casualty was a line transcribed by hand into the table
+above -- it would have named an image on Docker Hub. Both entrypoints now enumerate `RepoDigests` and
+filter for the reference they pushed, refusing rather than guessing if it is absent, and
+`test_push_reports_the_digest_of_the_reference_it_pushed` holds that in both files.
+
+Worth noting where the same expression is still correct: `docs/setup.md` and record 018 use
+`index .RepoDigests 0` to resolve the digests of *pulled* images, and a pulled reference carries exactly
+one. The expression is not wrong; the assumption that a built-and-pushed image has only one name is.
+
+### The same output shows the built tag being produced twice, which is a separate finding
+
+`compose/docker-compose.yml` gives both `minio-init` and `mlflow` the same `image:` and the same `build:`
+context, with a comment stating that "compose builds the shared tag once, so naming it twice costs
+nothing". The build output contradicts the first half:
+
+```
+#11 [minio-init] exporting to image ... exporting manifest list sha256:8c561d3e...
+#11 naming to docker.io/mlops-platform/mlflow:2.22.4 done
+#12 [mlflow]     exporting to image ... exporting manifest list sha256:7d41f069...
+#12 naming to docker.io/mlops-platform/mlflow:2.22.4 done
+```
+
+Two exports, two different manifest lists, both claiming the same tag, and the later one wins. Compose
+reports `1/1` built, which is why this went unnoticed through every previous run. The layers themselves
+were `CACHED`, so the images differ only in metadata.
+
+**The mechanism is an inference and marked as one.** Both exports emitted an attestation manifest, and
+provenance attestations record build timestamps, which would give identical layers two different configs
+and therefore two different manifest digests. That is consistent with everything in the output and is not
+proven by it.
+
+Two consequences, and only the first is settled:
+
+1. **Which image gets the tag depends on export order**, which nothing guarantees. Here `mlflow` exported
+   second and won, and its digest is the one in the table. The layers are identical either way, so nothing
+   runs differently -- but the digest recorded above is order-dependent, and a digest is supposed to be the
+   thing that is not.
+2. **The built image's digest is therefore not reproducible from a commit.** This is the real reason record
+   018 is right to leave the built tag unpinned, replacing the premise scored false above. It also sits
+   exactly beside record 019's opposite result: the *package inventories* reproduced byte-identically on a
+   second host, because syft catalogues packages rather than manifests. Reproducible contents,
+   irreproducible identity, and both statements are true at once.
+
+What to do about the duplicate build is a decision this record does not take, because the options trade
+against each other rather than one being right: drop `minio-init`'s `build:` and lose its independence
+from an earlier `up`; disable provenance and get deterministic digests at the cost of an attestation this
+repository's supply-chain story arguably wants; or accept it and say so here. The comment in compose is
+corrected to describe what actually happens either way, since it currently asserts something false.

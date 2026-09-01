@@ -188,7 +188,18 @@ switch ($Target) {
         Invoke-Checked 'docker' @('push', $remote)
         Write-Output ''
         Write-Output 'pushed, at this digest -- record it against the commit, see docs/decisions/023:'
-        Invoke-Checked 'docker' @('image', 'inspect', '--format', '{{index .RepoDigests 0}}', $remote)
+        # Not `index .RepoDigests 0`: a locally built image that has been pushed carries a digest
+        # for its local name as well, docker normalises that name to docker.io, and the ordering is
+        # not defined. On 2026-08-31 index 0 was the local one, so the target reported a real digest
+        # beside a reference that resolves to Docker Hub -- right value, wrong image, and nothing
+        # failed. Filter for the reference actually pushed and refuse to guess if it is absent.
+        $reported = & docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' $remote
+        if ($LASTEXITCODE -ne 0) { throw "docker image inspect failed with exit code $LASTEXITCODE" }
+        $pushed = @($reported | Where-Object { $_ -like "${GhcrImage}@*" })
+        if ($pushed.Count -ne 1) {
+            throw ('expected one {0} digest, got {1}' -f $GhcrImage, $pushed.Count)
+        }
+        Write-Output $pushed[0]
     }
     'sbom' {
         # Mirrors the Makefile target, including the bind mount: the SPDX document is written by the

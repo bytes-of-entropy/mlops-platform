@@ -260,7 +260,9 @@ push: build
 	docker push $(GHCR_IMAGE):$(MLFLOW_TAG)
 	@echo ''
 	@echo 'pushed, at this digest -- record it against the commit, see docs/decisions/023:'
-	@docker image inspect --format '{{index .RepoDigests 0}}' $(GHCR_IMAGE):$(MLFLOW_TAG)
+	@docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' \
+	  $(GHCR_IMAGE):$(MLFLOW_TAG) | grep "^$(GHCR_IMAGE)@" || \
+	  { echo "no $(GHCR_IMAGE) digest was reported; the push did not complete"; exit 1; }
 
 # Everything about the chart that does not need a cluster. `helm lint` reads the chart; `helm template`
 # renders it and is the stronger check of the two, because lint accepts a template that renders to

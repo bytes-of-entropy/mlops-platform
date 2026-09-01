@@ -151,9 +151,16 @@ services:
   # distinction that matters the moment root credentials are replaced by a real role.
   minio-init:
     image: mlops-platform/mlflow:2.22.4
-    # Declared so this service can build the image it needs on its own. Compose builds the shared
-    # tag once, so naming it twice costs nothing and stops `run minio-init` depending on some
-    # earlier `up` having built it.
+    # Declared so this service can build the image it needs on its own, rather than `run minio-init`
+    # depending on some earlier `up` having built it.
+    #
+    # It does not come free, which this comment claimed until 2026-08-31 and the first `make push`
+    # disproved. Buildx exports the tag once per service that declares the build, so `make build`
+    # produces it twice and the later export wins the tag. The layers are cached and identical; the
+    # two exports differ in metadata, most likely the provenance attestation's timestamps, and so
+    # carry different manifest digests. Compose reports `1/1`, which is why it went unseen for so
+    # long. Record 023 has the evidence and the options; nothing here runs differently, but the
+    # digest of the published image is decided by export order.
     build:
       context: images/mlflow
     entrypoint: ["python", "/opt/ensure_buckets.py"]

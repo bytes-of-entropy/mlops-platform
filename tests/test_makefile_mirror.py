@@ -408,6 +408,36 @@ def test_push_depends_on_build_rather_than_hoping_for_it() -> None:
     assert "build" in push_body("make.ps1"), "make.ps1's push does not build first"
 
 
+def test_push_reports_the_digest_of_the_reference_it_pushed() -> None:
+    """A positional index into `RepoDigests` reports a real digest beside the wrong image.
+
+    Observed on 2026-08-31, on the first and so far only run of this target. A locally built image
+    that has been pushed carries a repo digest for its local name too -- docker normalises
+    `mlops-platform/mlflow` to `docker.io/mlops-platform/mlflow` -- so `RepoDigests` held two
+    entries and index 0 was the local one. The target printed the correct digest under a reference
+    that resolves to Docker Hub, where no such image exists.
+
+    Worth a test rather than a fix alone because of the failure shape. Nothing exited non-zero and
+    the digest itself was right, so the only thing wrong was a name in a line copied by hand into
+    record 023's table. A target whose output is transcribed into a record has to be right about
+    what it names, not only about the value beside it.
+
+    Comments are stripped before asserting: the fix carries one naming the expression it replaced,
+    and that sentence is the reason the target is correct rather than evidence that it is not.
+    """
+    for name in ("Makefile", "make.ps1"):
+        code = [line for line in push_body(name).splitlines() if not line.strip().startswith("#")]
+        assert not any("index .RepoDigests" in line for line in code), (
+            f"{name}'s push indexes RepoDigests positionally, and that order is not defined"
+        )
+        assert any("range .RepoDigests" in line for line in code), (
+            f"{name}'s push does not enumerate RepoDigests to find the reference it pushed"
+        )
+        assert any("GHCR_IMAGE)@" in line or "GhcrImage}@" in line for line in code), (
+            f"{name}'s push does not filter those digests by the reference it pushed"
+        )
+
+
 def test_push_does_not_handle_a_credential() -> None:
     """A login belongs in the operator's session, never in something this repository can read.
 
