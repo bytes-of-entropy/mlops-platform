@@ -39,6 +39,30 @@ jobs:
           .venv/bin/python -m pip install --upgrade pip
           .venv/bin/python -m pip install -e ".[dev]"
 
+      # Compose refuses to parse its own file without these, so `make build` cannot run without a
+      # .env even though nothing here starts a container. Every credential is interpolated as
+      # `${VAR:?set VAR in .env}` -- the form that refuses rather than substituting an empty value --
+      # so that no default can become a committed secret and no machine starts successfully without
+      # one. The property that protects the credentials is what makes this step necessary, and the
+      # first run of this workflow failed here in 0s with that exact message.
+      #
+      # The same generation the ci.yml idempotency job uses: runner-local, single-use, never printed.
+      # These values are interpolated and then discarded -- nothing in this job reads them, and the
+      # image being built does not depend on any of them. Duplicated rather than shared because the
+      # alternative is a composite action to save eight lines, and
+      # tests/test_workflow_contract.py asserts the two jobs cannot drift apart.
+      - name: generate local credentials
+        run: |
+          {
+            echo "MINIO_ROOT_USER=ci$(openssl rand -hex 6)"
+            echo "MINIO_ROOT_PASSWORD=$(openssl rand -hex 24)"
+            echo "POSTGRES_USER=ci$(openssl rand -hex 6)"
+            echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)"
+            echo "POSTGRES_DB=platform"
+            echo "AIRFLOW_ADMIN_PASSWORD=$(openssl rand -hex 24)"
+            echo "AIRFLOW_FERNET_KEY=$(openssl rand -base64 32)"
+          } >> .env
+
       # The one image this repository builds has to exist locally before it can be catalogued, and
       # cataloguing it is the point: it is the only image in the spine whose contents are a decision
       # made here. `--profile full` matches what `make sbom` walks.
