@@ -14,6 +14,7 @@ sentence about the wrong subject. `compile()` costs nothing and runs on a laptop
 
 from __future__ import annotations
 
+import json
 import re
 
 from tests.clusterops import (
@@ -95,3 +96,44 @@ def test_the_makefile_reads_its_versions_from_one_place_the_tier_can_find() -> N
     for key in ("KIND_NODE_IMAGE", "METRICS_SERVER", "INGRESS_NGINX", "MLFLOW_TAG"):
         assert declared.get(key), f"{key} did not parse out of the Makefile"
     assert re.match(r"^kindest/node:v\d", declared["KIND_NODE_IMAGE"]), declared["KIND_NODE_IMAGE"]
+
+
+def test_the_metrics_patch_is_a_committed_file_all_three_callers_pass() -> None:
+    """Inline JSON on a command line cannot survive both shells, and one of them proved it.
+
+    `sh` keeps a single-quoted argument intact, so the Makefile's inline patch worked. Windows
+    PowerShell 5.1 does not preserve embedded double quotes when handing an argument to a native
+    executable, so the same JSON reached kubectl malformed and the API server answered that the
+    request was invalid -- which reads as a bad patch and was a bad shell. The tier, which builds
+    argv from Python and never involves a shell, was unaffected and passed, and that is what
+    located the fault.
+
+    One committed file removes the question. Asserted across all three callers rather than only the
+    one that broke, because two of them agreeing is how this looked correct.
+    """
+    patch = REPO_ROOT / "charts" / "metrics-server-insecure-tls.json"
+    assert patch.is_file(), f"{patch} is missing, so every caller below passes a path to nothing"
+    for name in ("Makefile", "make.ps1"):
+        text = (REPO_ROOT / name).read_text(encoding="utf-8")
+        assert "--patch-file" in text, f"{name} does not use --patch-file"
+        assert 'kubelet-insecure-tls"}]' not in text, (
+            f"{name} still carries the patch inline, which PowerShell cannot pass intact"
+        )
+    assert "--patch-file" in (REPO_ROOT / "tests" / "clusterops.py").read_text(encoding="utf-8")
+
+
+def test_the_metrics_patch_says_what_kubectl_needs_it_to_say() -> None:
+    """A JSON patch that parses and targets the wrong path fails only on a cluster.
+
+    `add` to `/spec/template/spec/containers/0/args/-` appends to container 0's argument list, which
+    metrics-server v0.9.0 does have -- checked against the released manifest, not assumed, and
+    an `add` whose parent is absent is rejected by the API server rather than ignored.
+    """
+    patch = json.loads(
+        (REPO_ROOT / "charts" / "metrics-server-insecure-tls.json").read_text(encoding="utf-8")
+    )
+    assert isinstance(patch, list) and len(patch) == 1, patch
+    operation = patch[0]
+    assert operation["op"] == "add", operation
+    assert operation["path"] == "/spec/template/spec/containers/0/args/-", operation
+    assert operation["value"] == "--kubelet-insecure-tls", operation

@@ -40,6 +40,7 @@ $MlflowTag = '2.22.4'
 # metadata rather than from memory, which is the mistake record 020 exists about.
 $KindCluster = 'mlops-platform'
 $KindConfig = 'charts/kind-cluster.yaml'
+$MetricsPatch = 'charts/metrics-server-insecure-tls.json'
 $KindNodeImage = 'kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5'
 $MetricsServer = 'v0.9.0'
 $IngressNginx = 'controller-v1.15.1'
@@ -283,10 +284,14 @@ switch ($Target) {
             '--context', $context, 'apply', '-f',
             "https://github.com/kubernetes-sigs/metrics-server/releases/download/$MetricsServer/components.yaml"
         )
-        $patch = '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
         Invoke-Checked 'kubectl' @(
             '--context', $context, '-n', 'kube-system', 'patch', 'deployment', 'metrics-server',
-            '--type=json', '-p', $patch
+            # --patch-file, not -p with inline JSON. PowerShell 5.1 does not preserve embedded
+            # double quotes when handing an argument to a native executable, so the JSON reached
+            # kubectl malformed and the API server answered "the request is invalid" -- which
+            # reads as a bad patch and was a bad shell. The Makefile passes the same file, so
+            # both entrypoints now send identical bytes.
+            '--type=json', '--patch-file', $MetricsPatch
         )
         Invoke-Checked 'kubectl' @(
             '--context', $context, 'apply', '-f',

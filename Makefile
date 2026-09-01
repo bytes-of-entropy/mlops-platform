@@ -68,6 +68,12 @@ MLFLOW_TAG      ?= 2.22.4
 # so this is the pin to move when the kind version moves, and not before.
 KIND_CLUSTER    ?= mlops-platform
 KIND_CONFIG     ?= charts/kind-cluster.yaml
+# A file rather than an inline `-p '...'`, because the two entrypoints cannot both pass the same
+# JSON on a command line. `sh` keeps a single-quoted argument intact; Windows PowerShell 5.1 does
+# not preserve embedded double quotes when handing an argument to a native exe, so the JSON
+# arrived at kubectl malformed and the API server answered "the request is invalid". A committed
+# file is reviewable too, which an escaped one-liner is not.
+METRICS_PATCH   ?= charts/metrics-server-insecure-tls.json
 KIND_NODE_IMAGE ?= kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
 METRICS_SERVER  ?= v0.9.0
 INGRESS_NGINX   ?= controller-v1.15.1
@@ -285,7 +291,7 @@ kind-up:
 	kubectl --context kind-$(KIND_CLUSTER) apply -f \
 	  https://github.com/kubernetes-sigs/metrics-server/releases/download/$(METRICS_SERVER)/components.yaml
 	kubectl --context kind-$(KIND_CLUSTER) -n kube-system patch deployment metrics-server \
-	  --type=json -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+	  --type=json --patch-file $(METRICS_PATCH)
 	kubectl --context kind-$(KIND_CLUSTER) apply -f \
 	  https://raw.githubusercontent.com/kubernetes/ingress-nginx/$(INGRESS_NGINX)/deploy/static/provider/kind/deploy.yaml
 	kubectl --context kind-$(KIND_CLUSTER) -n ingress-nginx wait --for=condition=available \

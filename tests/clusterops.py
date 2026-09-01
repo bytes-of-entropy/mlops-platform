@@ -38,6 +38,7 @@ CONTEXT = f"kind-{TEST_CLUSTER}"
 
 CHART = "charts/mlops-platform"
 KIND_CONFIG = "charts/kind-cluster.yaml"
+METRICS_PATCH = "charts/metrics-server-insecure-tls.json"
 
 #: Creating a cluster pulls a node image and starts a control plane; installing waits on three
 #: workloads. Generous, and bounded: an unbounded wait hangs the job until something outside this
@@ -244,9 +245,12 @@ class Cluster:
                 "deployment",
                 "metrics-server",
                 "--type=json",
-                "-p",
-                '[{"op":"add","path":"/spec/template/spec/containers/0/args/-",'
-                '"value":"--kubelet-insecure-tls"}]',
+                # The same committed file both make targets pass. Inline JSON works from Python,
+                # which builds argv directly, and does not work from PowerShell -- so a third copy
+                # of the patch here would be a third thing to keep in step and the only one whose
+                # shell tolerated it.
+                "--patch-file",
+                METRICS_PATCH,
             ],
         )
         ingress = (
