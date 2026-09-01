@@ -515,3 +515,23 @@ cannot have.
 push will publish `45e78a9d` and the table will hold both, which is the honest record of what was
 published when rather than a tidy single row. Whether a single-manifest image auto-links to its repository
 is still untested and still costs a throwaway package to test, unchanged by any of this.
+
+## Prediction scored, 2026-09-01: 2 confirmed, and it establishes more than it claimed
+
+CI's `scan` job passed on `f894289`, the commit that disabled attestations. That job runs a full `make
+sbom` on a Linux runner and then `git diff --exit-code -- sbom/`, so the six committed inventories were
+regenerated from a **differently shaped image** -- a single manifest where every previous run produced an
+index -- and came back byte-identical.
+
+Prediction 2 said they would not change because the layers are identical. That holds, and the stronger
+statement is the one worth keeping: **the committed inventory is invariant to the image's manifest shape,
+not merely to the host it is catalogued on.** A change that altered the published digest of every build
+moved nothing under `sbom/` at all.
+
+That is record 019's design decision paying off in a case it did not anticipate. It commits package lists
+rather than digests so that image identity churn cannot move the artifact, and the churn it was protecting
+against was a base image being repinned. It turned out to also absorb a change in how the image is
+wrapped, which is a different kind of churn entirely.
+
+All three predictions in this record's second round are now scored: 1 confirmed, 2 confirmed, 3 resolved
+against the guess about which variant would win.

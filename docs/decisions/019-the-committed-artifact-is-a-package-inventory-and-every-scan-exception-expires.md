@@ -348,3 +348,19 @@ present locally did not stop syft, and the root-owned docker socket did not refu
 The failure that did occur was earlier, in `make build`, and had nothing to do with either -- it was
 compose refusing to parse without a `.env`, which is recorded against `tests/test_workflow_contract.py`.
 Two confident hypotheses about a step, both wrong, and the actual cause one step upstream.
+
+## Claim strengthened, 2026-09-01: the inventory does not depend on the image's shape either
+
+The section above established that the inventories reproduce on a second host. Record 023's attestation
+change then tested something this record had not thought to claim.
+
+Disabling build attestations changes the built image from an index -- a manifest list wrapping the image
+and its provenance attestation -- into a single manifest. Every published digest changed as a result. The
+`scan` job regenerated all six inventories from that differently shaped image, on Linux, and
+`git diff --exit-code -- sbom/` passed.
+
+So the diff-review property holds across hosts, across operating systems, across cataloguing sources, and
+now across a change in the image's manifest shape. **The inventory tracks contents and nothing else**,
+which is what this record chose to commit and the reason the choice keeps holding under conditions it was
+not designed for. A committed digest would have moved on every one of those changes and said nothing about
+whether any package had.
