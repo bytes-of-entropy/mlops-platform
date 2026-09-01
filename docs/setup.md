@@ -739,19 +739,19 @@ sharing *state*; nothing can make them share a port. Run `make kind-down` before
 it refuses up front, naming the other cluster, rather than letting kind fail with a bind error that
 reads like a broken config.
 
-Seven assertions, and the weakest of them is the one most charts stop at. The State column is from the
-first real run, on 2026-08-31, and is here rather than in a changelog because a reader deciding whether
-to trust this chart wants to know which of these has actually happened:
+Seven assertions, and the weakest of them is the one most charts stop at. All seven pass, as of the
+run of 2026-08-31; the notes say what each one cost to get there, because two of them failed first on
+their own text rather than on the cluster and that is worth knowing about a test you are relying on:
 
-| What it asserts | State | Why not something simpler |
-| --- | --- | --- |
-| all three Deployments report Available | **passed** | the floor, and the same condition `--wait` waits on |
-| the rendered manifest contains no value from your `.env` | **no leak, assertion was wrong** | the contract tier can only check that no *template* holds a literal; this renders with real values. It matched `platform` inside `mlops-platform` and reported the release name as a secret, so it now requires a whole-token match |
-| the Ingress answers `/health` from outside the cluster | **passed** | a ClusterIP that answers proves only the pod, not the Ingress rule, the class matching a controller, or kind's port mapping |
-| creating an experiment writes through to Postgres, and searching finds it | **503, unexplained** | `/health` answers out of the process and says nothing about the database. It now asks MLflow's ClusterIP from inside the cluster first, so a repeat names the Ingress or MLflow rather than leaving both possible |
-| the artifact bucket exists, asked of S3 from inside the pod | **bucket exists; assertion was wrong** | record 015's defect: a configured artifact root whose bucket nothing created survived a green M0. The pod printed `bucket present: mlflow` and the assertion looked for quotes `print` does not emit |
-| the HPA reports a CPU number rather than `<unknown>` | **passed** | named separately so a metrics-server failure does not read as a load generator that is not working — which is exactly what happened, and the split is why it was legible |
-| the replica count rises above one under load from three pods | **never exercised** | the milestone's last criterion, and the evidence that the chart's CPU *requests* are real. The generator was invalid Python, so no load was ever produced; `compile()` on it is now a contract test |
+| What it asserts | Why not something simpler |
+| --- | --- |
+| all three Deployments report Available | the floor, and the same condition `--wait` waits on |
+| the rendered manifest contains no value from your `.env` | the contract tier can only check that no *template* holds a literal; this renders with real values. It first matched `platform` inside `mlops-platform` and reported the release name as a secret, so it now requires a whole-token match |
+| the Ingress answers `/health` from outside the cluster | a ClusterIP that answers proves only the pod, not the Ingress rule, the class matching a controller, or kind's port mapping |
+| creating an experiment writes through to Postgres, and searching finds it | `/health` answers out of the process and says nothing about the database. This returned 503 once and has not since, so it is recorded as a race; it now asks MLflow's ClusterIP from inside the cluster first, so a repeat names the Ingress or MLflow rather than leaving both possible |
+| the artifact bucket exists, asked of S3 from inside the pod | record 015's defect: a configured artifact root whose bucket nothing created survived a green M0. The bucket was there the first time and the assertion was not -- it looked for quotes `print` does not emit |
+| the HPA reports a CPU number rather than `<unknown>` | named separately so a metrics-server failure does not read as a load generator that is not working, which is exactly what happened the first time and why the split earned itself |
+| the replica count rises above one under load from three pods | the milestone's last criterion, and the evidence that the chart's CPU *requests* are real. It scaled inside the 240-second budget once the generator was valid Python -- the first version was assembled with semicolons around a `def`, so no pod ever made a request |
 
 That last pair is why the chart sets requests and the compose files do not. HPA utilisation is a
 percentage of a container's request, not of its limit and not of the node, so a workload with a limit
