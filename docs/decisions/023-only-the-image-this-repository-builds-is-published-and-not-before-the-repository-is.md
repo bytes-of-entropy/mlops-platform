@@ -332,3 +332,76 @@ being wrong about the mechanism is a paragraph in a record rather than a broken 
 
 **What is not in doubt** is that the manual connect is a step, not a workaround for a defect. `PUBLISH.md`
 now says so, because the alternative is a runbook that describes a normal outcome as a fault.
+
+## Claim tested, 2026-08-31 (the batched run): hypothesis 1 is dead, and the digest is worse than feared
+
+Four builds and one label read, on the build machine.
+
+### The label is present, so the first explanation is excluded
+
+```
+org.opencontainers.image.source: https://github.com/bytes-of-entropy/mlops-platform
+```
+
+Read straight off `docker image inspect --format '{{json .Config.Labels}}'`. The label reaches the image,
+spelled correctly, naming the right repository. So the possibility that it never got there -- the one this
+record could not exclude and nothing in the repository had ever checked -- is now excluded, and the middle
+link of that chain has finally been measured once.
+
+Hypothesis 2 is what remains: GHCR did not read the label because the pushed artifact is an index with no
+single config for a label to sit in. It is now the only explanation standing, which is a weaker position
+than it sounds -- it survived by elimination among two guesses, and a third nobody has thought of would
+also survive that.
+
+### The built image's digest is not reproducible, and the duplicate build is worse than described
+
+With attestations on, two builds with no source change between them:
+
+```
+pass 1:  3c0400b1...   and   293d7a77...
+pass 2:  367e708b...   and   7660142d...
+```
+
+**Four exports, four different digests.** Two conclusions, both now measured rather than inferred:
+
+1. **A rebuild of the same commit produces a different image digest.** The section above suspected this;
+   it is now observed twice. So the digest in this record's table identifies one build and nothing more,
+   and no reader can regenerate it for comparison. That is the real reason record 018 is right to leave
+   the built tag unpinned.
+2. **The two exports inside a single build produce different digests from each other**, not merely from
+   the previous build. The earlier run showed this once and it could have been coincidence of timing; it
+   is now four for four. So `mlops-platform/mlflow:2.22.4` genuinely names two different images during
+   every `make build`, and which one keeps the tag is decided by export order.
+
+### With attestations off, the build stops producing an index at all
+
+This is the result worth the run, and it arrived by accident. With `BUILDX_NO_DEFAULT_ATTESTATIONS=1`,
+**no `exporting manifest list` line appears at all** -- in either pass. The export still happens, since the
+`naming to` lines are there and the cache state is the same as the passes above. Buildx is producing a
+single manifest instead of an index.
+
+That is precisely the shape hypothesis 2 says GHCR needs. A single-manifest image has a config, and a
+config is where a label lives. So disabling attestations is not only the candidate fix for the digest
+problem, it is also the candidate fix for the linking problem, from a run that was not testing linking.
+
+**Marked as support, not proof.** Nothing here observed GHCR reading anything. The chain is: attestations
+off produces a single manifest (observed), a single manifest has a config carrying the label (true by
+construction), GHCR reads the label from the config (still assumed). Testing the last step needs a push to
+a package name that has never existed, for the reason already recorded -- a manually linked package cannot
+demonstrate an automatic link.
+
+### And the measurement this run was built to take, it did not take
+
+Whether attestations-off digests are *reproducible* is still unknown, and the fault is in the instrument.
+The filter watched for `exporting manifest list`, and with attestations off the line reads `exporting
+manifest` with no `list`, so the digests were printed by the build and discarded by the grep. The pair that
+would have confirmed or refuted the provenance-timestamp explanation was thrown away between the build and
+the log.
+
+So that explanation stands exactly where it did before the run: plausible, consistent with everything, and
+unconfirmed. The filter also dropped the `[minio-init]` and `[mlflow]` prefixes, so the four digests above
+cannot be attributed to targets either -- both are fixed, and re-running costs about a minute.
+
+A filter written to observe one shape, applied to the shape it was meant to detect a change in. Worth
+naming rather than quietly fixing: the same run that excluded hypothesis 1 for good failed to answer the
+question it was designed around, because the instrument encoded the assumption under test.
