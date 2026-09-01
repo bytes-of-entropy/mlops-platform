@@ -16,6 +16,22 @@ and a different docker, and they came back **byte-identical**; the section in
 [`docs/decisions/019`](docs/decisions/019-the-committed-artifact-is-a-package-inventory-and-every-scan-exception-expires.md)
 that said two hosts agreeing "stays untested rather than assumed" is now scored.
 
+**The image is published, and its digest is reproducible from this commit.**
+
+```
+docker pull ghcr.io/bytes-of-entropy/mlops-platform/mlflow:2.22.4
+```
+
+One image, not six: the other five belong to other people, and republishing them under this account would
+mean vouching for artifacts this project did not build. Build attestations are deliberately disabled,
+because leaving them on made every build export a fresh index digest over unchanging layers -- so a
+published digest identified a build rather than a commit, which is the opposite of what a digest is for.
+[`docs/decisions/023`](docs/decisions/023-only-the-image-this-repository-builds-is-published-and-not-before-the-repository-is.md)
+records the measurement, every digest published, and the two defects that shipped before it: a target that
+printed a correct digest beside a reference naming Docker Hub, and a race between two services sharing one
+tag that published the wrong one of them. Neither exited non-zero, which is the reason both are now held by
+tests rather than by care.
+
 **Demonstrated.** The compose spine, its contract suite, a preflight that refuses a start which would
 come up healthy and wrong, and a smoke DAG that crosses the spine and is asserted at both ends, in
 MLflow and in Postgres. The integration tier runs end to end on a real machine — `120 passed, 0 skipped`
