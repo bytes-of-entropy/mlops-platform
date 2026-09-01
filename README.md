@@ -4,9 +4,17 @@ The local-first platform the two flagship repositories deploy onto: a Spark clus
 object storage, an MLflow tracking server, a scheduler and a metadata database, all reproducible on
 one machine, and the Kubernetes and Terraform footprint they run on in the cloud.
 
-**Status: M0 closed at `v0.1.0`, M1 at `v0.2.0`, M2 at `v0.3.0`. Scope freezes here; the next thing
-this repository does is publish.** Two claims here are demonstrated and one is not, and the difference is the point of this
-paragraph.
+**Status: M0 closed at `v0.1.0`, M1 at `v0.2.0`, M2 at `v0.3.0`, and CI is green on all four jobs.**
+Scope is frozen. Two claims below are demonstrated and one is not, and that difference is the point of
+the paragraph.
+
+CI running at all is new, and it settled two things nothing here could. **Every job passed on Linux**,
+which is the first time this code has run on anything but Windows — the authoring machine and the build
+machine are both Windows, so the cross-platform intention had no evidence until now. And the `scan` job
+regenerated the six committed package inventories on a different machine, a different operating system
+and a different docker, and they came back **byte-identical**; the section in
+[`docs/decisions/019`](docs/decisions/019-the-committed-artifact-is-a-package-inventory-and-every-scan-exception-expires.md)
+that said two hosts agreeing "stays untested rather than assumed" is now scored.
 
 **Demonstrated.** The compose spine, its contract suite, a preflight that refuses a start which would
 come up healthy and wrong, and a smoke DAG that crosses the spine and is asserted at both ends, in

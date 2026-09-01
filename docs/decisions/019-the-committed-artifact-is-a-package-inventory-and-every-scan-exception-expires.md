@@ -311,3 +311,40 @@ reproducible, the scanner is pinned by digest with an expiry, and the database c
 because freshness is the whole point of it. Any gate defined on a count of findings therefore moves when
 the database moves, with no change to any image. That is a constraint on whatever threshold M1 settles
 on, and it is worth having in writing before the threshold is chosen rather than after it fires.
+
+## Claim tested, 2026-08-31: the second host arrived, and it agrees
+
+The section above closed by saying the reproducibility evidence was same-machine, that two machines
+agreeing "stays untested rather than assumed", and that testing it would need a second host this
+portfolio did not have. Publishing supplied one. `supply.yml`'s `scan` job ran on `ubuntu-24.04` and its
+third step -- `git diff --exit-code -- sbom/` after a full `make sbom` -- passed.
+
+**So the committed inventories were regenerated on a different machine, a different operating system and
+a different docker, and came back byte-identical.** That is a stronger claim than this record made and it
+is now evidence rather than an assumption. The diff-review property the whole design rests on -- that a
+change in `sbom/` means an image moved rather than a cataloguer wandering -- holds across hosts, which is
+the version of it that matters once more than one machine can produce a diff.
+
+**One inference, marked as one.** Four of the six images were almost certainly catalogued from the
+registry rather than from a local daemon. `make build` builds one service, so it pulls only that
+Dockerfile's base; nothing on a fresh runner pulls airflow, spark, minio or postgres. Syft resolves a
+bare reference by trying the daemon and falling back to a registry, so those four were fetched by digest
+from the registry while the build machine catalogued its local copies. If that is right, the agreement is
+stronger again: the same digest catalogued from two different *sources* produces the same package set.
+
+That is worth naming precisely because it was an open question raised earlier the same day and closed by
+accident. A proposal was drafted to make syft read the registry explicitly, on the theory that the fresh
+runner would fail without local images -- and it flagged the risk that changing the source might change
+the inventory and break this very check. The run answered both: no change was needed, and source does not
+change the inventory. The proposal was never applied and is not needed.
+
+**What is still not established.** Whether syft actually used the registry, as opposed to the runner
+having those images cached for some other reason. The job's log records syft's source per image and
+nobody has read it. It changes nothing about the diff-review property either way, which is why this is a
+footnote and not a task.
+
+**And the two failures predicted for that step did not happen.** Both were wrong: the images not being
+present locally did not stop syft, and the root-owned docker socket did not refuse the syft container.
+The failure that did occur was earlier, in `make build`, and had nothing to do with either -- it was
+compose refusing to parse without a `.env`, which is recorded against `tests/test_workflow_contract.py`.
+Two confident hypotheses about a step, both wrong, and the actual cause one step upstream.
