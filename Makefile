@@ -274,6 +274,17 @@ scan-accept: sbom scan-report
 push: build
 	@docker image inspect mlops-platform/mlflow:$(MLFLOW_TAG) >/dev/null 2>&1 || \
 	  { echo "mlops-platform/mlflow:$(MLFLOW_TAG) is not built; run 'make build'"; exit 1; }
+	@# The shared tag is exported once per service that declares the build, and the later export
+	@# wins it. On 2026-09-01 minio-init won and this target published its variant: identical layers
+	@# under a `com.docker.compose.service=minio-init` label, so the artifact named the bucket
+	@# initialiser rather than the tracking server. Building the one service again claims the tag
+	@# back, deterministically, instead of leaving it to whichever export finished last.
+	$(COMPOSE) build mlflow
+	@service=$$(docker image inspect \
+	  --format '{{index .Config.Labels "com.docker.compose.service"}}' \
+	  mlops-platform/mlflow:$(MLFLOW_TAG)) ; \
+	  [ "$$service" = "mlflow" ] || \
+	  { echo "the tag holds the $$service variant, not mlflow; refusing to publish" ; exit 1 ; }
 	docker tag mlops-platform/mlflow:$(MLFLOW_TAG) $(GHCR_IMAGE):$(MLFLOW_TAG)
 	docker push $(GHCR_IMAGE):$(MLFLOW_TAG)
 	@echo ''

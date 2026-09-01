@@ -466,6 +466,41 @@ def test_push_reports_the_digest_of_the_reference_it_pushed() -> None:
         )
 
 
+def test_push_claims_the_shared_tag_and_checks_which_variant_it_holds() -> None:
+    """Two services build the same tag, and the later export wins it.
+
+    `minio-init` and `mlflow` share an `image:` and a `build:`, so compose exports the tag twice and
+    stamps `com.docker.compose.service` differently into each. Identical layers, one differing
+    label, two digests. Export order is not fixed -- it was observed flipping between consecutive
+    builds on one machine -- so which variant the tag holds is a race.
+
+    On 2026-09-01 that race published the wrong one: `sha256:0c27cd2d`, the copy labelled
+    `minio-init`, so the artifact named the bucket initialiser rather than the tracking server.
+    Nothing failed and nothing behaves differently, since the entrypoint is overridden per service
+    at run time. It is simply the wrong thing to publish under that name.
+
+    So `push` rebuilds the one service to claim the tag back, then refuses if the label still says
+    anything else. The rebuild makes it deterministic and the check makes it honest: if a future
+    compose stops stamping that label, or stamps something new, the target stops rather than
+    publishing whatever it found.
+
+    Deleting the duplicate `build:` key would end the race outright and is not the fix. Both
+    `tests/test_image_supply.py` and `supply/images.py` classify a service with no build key as
+    pulled, and record 018 then demands a digest pin that a locally built image cannot have.
+    """
+    for name in ("Makefile", "make.ps1"):
+        code = [line for line in push_body(name).splitlines() if not line.strip().startswith("#")]
+        joined = " ".join(code)
+        assert "build mlflow" in joined or "'build', 'mlflow'" in joined, (
+            f"{name}'s push does not rebuild the mlflow service, so the tag it publishes is "
+            f"whichever variant exported last"
+        )
+        assert "com.docker.compose.service" in joined, (
+            f"{name}'s push does not check which variant the shared tag holds"
+        )
+        assert "mlflow" in joined, f"{name}'s push does not name the variant it requires"
+
+
 def test_push_does_not_handle_a_credential() -> None:
     """A login belongs in the operator's session, never in something this repository can read.
 

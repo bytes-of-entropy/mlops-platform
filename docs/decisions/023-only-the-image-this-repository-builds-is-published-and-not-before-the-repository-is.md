@@ -115,7 +115,8 @@ stays untested until the repository publishes.
 
 | commit | tag | digest |
 | --- | --- | --- |
-| `4f5f850` | `2.22.4` | `sha256:7d41f0696592d57e118e75cc21d55c4949c32f2a5ff64f1155bd672cd7c2bdde` |
+| `4f5f850` | `2.22.4` | `sha256:7d41f0696592d57e118e75cc21d55c4949c32f2a5ff64f1155bd672cd7c2bdde` — an *index* digest, irreproducible, and superseded |
+| `f894289` | `2.22.4` | `sha256:0c27cd2d123479f8fa055f0c1796bcedf5c0994d332ed5f2f807a7c58dd0c5fe` — reproducible, but the **minio-init** variant |
 
 That digest is `ghcr.io/bytes-of-entropy/mlops-platform/mlflow@sha256:7d41f069...`, and it identifies
 **one build rather than a commit**. The distinction is not pedantry and the section below explains it:
@@ -478,3 +479,39 @@ is a guard -- `push` refuses unless the image it is about to publish carries
 `com.docker.compose.service=mlflow` -- which costs one assertion and no restructuring. Not applied in the
 same commit as the attestation change, because a fix and a guard against a different defect do not belong
 together, and because prediction 3 above is worth observing before it is prevented.
+
+## Prediction scored, 2026-09-01: 1 confirmed, 3 resolved on the wrong side
+
+The second push, from the same build machine, with attestations off by default in both entrypoints.
+
+**Prediction 1 confirmed.** Four builds, no source change: `45e78a9d` for mlflow and `0c27cd2d` for
+minio-init, every time, and no index anywhere. The published digest is now reproducible from the commit,
+which is what makes the table above worth keeping. `docker push` reported `size: 1820` against the first
+push's `856` -- a manifest rather than an index -- and every layer came back `Layer already exists`,
+confirming from the registry's side that the layers never changed while the published identity did.
+
+**Prediction 3 resolved, and it published the wrong variant.** The digest is
+`sha256:0c27cd2d...`: **minio-init's copy.** The build exported mlflow first and minio-init second, the
+later export took the tag, and `push` published whatever the tag held. So the artifact now in GHCR carries
+`com.docker.compose.service=minio-init` and names the bucket initialiser rather than the tracking server.
+
+Nothing failed and nothing behaves differently -- identical layers, and each service overrides its
+entrypoint at run time -- but it is the wrong thing to publish under that name, and it was decided by a
+race rather than by anything anyone chose. That was worth observing rather than preventing in advance,
+which is why the guard was deliberately held back one commit.
+
+**The fix is a rebuild plus a refusal, not a deletion.** `push` now rebuilds the single mlflow service to
+claim the tag back, then reads `com.docker.compose.service` off the image and refuses unless it says
+`mlflow`. The rebuild makes the outcome deterministic; the check makes it honest, because if a future
+compose stops stamping that label or stamps something new, the target stops instead of publishing whatever
+it found. Held in both entrypoints by a mirror test.
+
+Deleting minio-init's duplicate `build:` key would end the race outright and remains the wrong move, for
+the reason recorded in the section above: both `tests/test_image_supply.py` and `supply/images.py` classify
+a service with no build key as pulled, and record 018 then requires a digest pin that a locally built image
+cannot have.
+
+**What this leaves.** The published digest is reproducible and identifies the minio-init variant; the next
+push will publish `45e78a9d` and the table will hold both, which is the honest record of what was
+published when rather than a tidy single row. Whether a single-manifest image auto-links to its repository
+is still untested and still costs a throwaway package to test, unchanged by any of this.

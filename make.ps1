@@ -190,6 +190,19 @@ switch ($Target) {
         if ($LASTEXITCODE -ne 0) { throw 'build failed' }
         $local = "mlops-platform/mlflow:$MlflowTag"
         $remote = "${GhcrImage}:$MlflowTag"
+
+        # The shared tag is exported once per service that declares the build and the later export
+        # wins it. On 2026-09-01 minio-init won and this target published its variant: identical
+        # layers under a `com.docker.compose.service=minio-init` label, naming the bucket initialiser
+        # rather than the tracking server. Building the one service again claims the tag back
+        # deterministically rather than leaving it to whichever export finished last.
+        Invoke-Checked 'docker' ($Compose + @('build', 'mlflow'))
+        $service = & docker image inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' $local
+        if ($LASTEXITCODE -ne 0) { throw "docker image inspect failed with exit code $LASTEXITCODE" }
+        if ("$service".Trim() -ne 'mlflow') {
+            throw ('the tag holds the {0} variant, not mlflow; refusing to publish it' -f "$service".Trim())
+        }
+
         Invoke-Checked 'docker' @('tag', $local, $remote)
         Invoke-Checked 'docker' @('push', $remote)
         Write-Output ''
