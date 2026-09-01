@@ -40,15 +40,23 @@ that ran rather than parsed:
 | `helm lint` clean | **yes**, first attempt, both values files, `0 chart(s) failed` |
 | healthy pods | **yes**, all three Deployments Available and Running |
 | probes correct | **yes**, and the `startupProbe` earned its 150-second allowance: first boot took minutes, not the one this repo predicted |
-| an Ingress that answers | **partly** — `/health` returns 200 through it; the tracking API returned 503 once and that is unexplained |
-| HPA scales under load | **unproven** — the load generator was invalid Python, so no load was ever generated |
+| an Ingress that answers | **yes** — `/health` returns 200, and an experiment created through it is read back out of Postgres. The 503 seen once was a race and has not recurred |
+| HPA scales under load | **yes** — the replica count rises above one under load from three pods, inside the 240-second budget |
 | charts versioned so a flagship pins a release | **yes**, `0.1.0`, orderable, asserted |
 
-Three of the cluster tier's seven assertions passed. The other four failed on defects in *this
-repository* rather than in the chart: a PowerShell stderr redirect that killed `make kind-deploy` on its
-first line, a load generator assembled with semicolons around a `def`, a credential check that matched
-the release name as a substring, and an assertion looking for quotes that `print` does not emit. All four
-are fixed and none has been re-run, so **M2 stays open** until the tier is green end to end.
+**The cluster tier is green: `7 passed, 0 skipped in 192s`.** It took two runs. The first found four
+defects, all in *this repository* rather than in the chart — a PowerShell stderr redirect, a load
+generator assembled with semicolons around a `def`, a credential check matching the release name as a
+substring, and an assertion looking for quotes `print` does not emit — and the second confirmed all four
+fixed and scored the HPA criterion no run had previously exercised.
+
+**M2 stays open on one thing, and it is not the chart.** `make kind-deploy` has still never installed the
+chart end to end. It failed a second time on a second PowerShell defect: `kubectl patch -p` with inline
+JSON, which PowerShell 5.1 cannot hand to a native executable with its quotes intact. The tier ran the
+identical patch through Python's argv and succeeded. Twice now the tier has passed while the documented
+target failed, both times for a reason belonging to PowerShell rather than to Kubernetes — which is what
+you get from a tier that deliberately does not use the mirror. The patch is now a file both entrypoints
+pass by path.
 
 What that run did settle: the non-root `fsGroup` values were right, the initContainer created the bucket
 and S3 confirmed it from inside the pod, the credential never reached the rendered manifest, and Helm

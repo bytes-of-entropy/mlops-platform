@@ -191,3 +191,41 @@ destroyed cleanly, the port-conflict guard never fired because the operator clus
 its own step, and every failure arrived with pods, events, deployments and HPA state attached — which
 is why four defects were diagnosable from one results file without a second run. The design decisions
 this record makes held; the code implementing them had four bugs.
+
+## Prediction scored, 2026-08-31 (second run): the tier is green, and 3 is confirmed on first exercise
+
+`7 passed, 0 skipped in 192s`. Every M2 exit criterion the tier covers is now demonstrated on a real
+cluster, including the one no previous run had exercised at all.
+
+**Prediction 3 is confirmed, and the timing half of it is falsified in the useful direction.** It said
+the HPA would scale but take longer than the 240 seconds allowed, with the deadline as the expected fix.
+It scaled inside the budget: the whole module, including cluster creation, the chart install, the
+metrics-server wait and the load run, finished in three minutes twelve. So the deadline was never the
+problem -- the load generator was, and once it was valid Python the autoscaler behaved exactly as the
+chart's CPU *requests* predicted. That is the assertion record 024 said the chart could make and compose
+could not, and it is now made.
+
+**The three defects fixed after the first run stayed fixed.** The credential check passes without
+reporting the release name, the bucket assertion matches what `print` emits, and the 503 did not recur --
+the tracking API answered, so an experiment was created through the Ingress and read back out of
+Postgres. That closes the question this record left open: **the 503 was a race, not a refusal.** It has
+not reappeared, and the retry with the `Server` header and the in-cluster probe are what would name it
+if it does.
+
+**Prediction 1 fires a second time, on a second PowerShell defect, and the pattern is now the finding.**
+`make kind-deploy` failed again. The stderr redirect was gone and the cluster created cleanly; the next
+line died. `kubectl patch --type=json -p '[{...}]'` cannot be passed from Windows PowerShell 5.1, which
+does not preserve embedded double quotes when handing an argument to a native executable, so kubectl
+received malformed JSON and the API server answered "the request is invalid". It reads as a bad patch and
+was a bad shell -- the same patch, from the tier, through Python's argv, worked.
+
+Twice now the tier has passed while the documented target failed, and both times for a reason belonging
+to PowerShell rather than to Kubernetes. That is worth stating as a property of this repository rather
+than as two incidents: **the mirror is the least-tested surface here, precisely because the tier
+deliberately does not use it.** This record chose that separation and this is its cost, arriving on
+schedule. The patch is now a committed file both entrypoints pass by path, which removes the class
+rather than the instance.
+
+**What M2 still owes: nothing the tier can show.** The criteria are met. What is unproven is the
+documented path -- `make kind-deploy` has never once installed the chart end to end -- and closing that
+is a re-run rather than new work.
