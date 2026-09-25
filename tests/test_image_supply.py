@@ -142,10 +142,23 @@ def test_every_pinned_image_still_resolves(reference: str) -> None:
 
     Asking the registry about a reference is not the same as pulling it, which is what keeps
     this cheap enough to sit beside the rest of the integration tier.
+
+    Asked by digest with the tag dropped, which is narrower than it looks. Given both, the client
+    resolves the *tag* and then checks the answer against the digest, so two things that are not
+    withdrawals fail: a publisher re-pushing a tag the pin no longer matches, and a registry that
+    declines an anonymous read of a tag manifest while serving the pull perfectly well. Both were
+    observed on the same run that catalogued both images successfully, which is the disagreement
+    that got this narrowed. The bytes are what the spine starts from and what a withdrawal takes
+    away, so the bytes are what this asks about; whether a tag still points at them is a different
+    question, asked where the tag matters.
     """
     binary = shutil.which("docker")
     assert binary is not None, "requires_docker admitted this test with no docker client present"
-    argv = [binary, "manifest", "inspect", reference]
+    # Safe on a reference carrying a registry port, which `split` on the first colon would not be.
+    # `DIGEST_PINNED` above guarantees exactly one `@` and a tag before it.
+    repository = reference.partition("@")[0].rpartition(":")[0]
+    by_digest = f"{repository}@{reference.partition('@')[2]}"
+    argv = [binary, "manifest", "inspect", by_digest]
     completed = subprocess.run(  # noqa: S603 (fixed argv, resolved path, no shell)
         argv,
         capture_output=True,
@@ -157,14 +170,16 @@ def test_every_pinned_image_still_resolves(reference: str) -> None:
     if completed.returncode != 0:
         raise AssertionError(
             describe_process(
-                f"resolving {reference}",
+                f"resolving {by_digest}, the bytes {reference} pins",
                 argv,
                 completed.returncode,
                 completed.stdout,
                 completed.stderr,
                 {
-                    "consequence": "this pin resolves in no configured registry, so nobody can "
-                    "start this spine; the fix is a deliberate bump with the new tag committed"
+                    "consequence": "these bytes resolve in no configured registry, so nobody can "
+                    "start this spine; the fix is a deliberate bump with the new tag committed. "
+                    "This no longer fires on a tag that merely moved, so treat it as a withdrawal "
+                    "until a by-digest pull from another machine says otherwise"
                 },
             )
         )
