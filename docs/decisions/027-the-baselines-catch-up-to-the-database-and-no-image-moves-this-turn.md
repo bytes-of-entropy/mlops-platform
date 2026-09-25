@@ -133,3 +133,27 @@ recording rather than acting would apply to it.
   reminder that a fixed-in column is a claim about a package index rather than about this spine.
 - The removal of CVE-2026-3298 exercises record 022's asymmetry against real data for the first time.
   The refresh drops it from three baselines and nothing fails, which is the designed direction.
+
+## Prediction scored, 2026-09-25 (the 11:45 run): 1 and 2 confirmed, 3 not triggered
+
+**Prediction 1 holds.** Both comparison steps reported `sbom/ is unchanged.` and exited 0, the first
+run in which either did. Step 11 compares before anything is written and step 13 after the accept, so
+the pair says two separate things: the committed inventories still describe these six images, and a
+scan taken today produces the baselines the repository carries rather than 36 more.
+
+**Prediction 2 holds, by way of step 13 rather than directly.** The run writes baselines before it
+gates, so the gate at step 14 is nominally against files that step 12 has just rewritten, and on its
+own it proves nothing about the committed ones. Step 13 closes that gap: it found the rewritten files
+byte-identical to what is committed, so `all baselined` for all six images is a statement about the
+repository and not only about the scratch copy. That the two steps are needed together to answer one
+question is worth keeping in mind the next time either is read alone.
+
+**Prediction 3 was not triggered.** Neither comparison came back non-empty, so the database has not
+moved since 2026-09-25, and the question of whether an addition would be a new advisory or one of
+these 36 stays open until it does.
+
+The run had one failing step and it was not a supply step: the Ingress probe answered 503 once and
+asserted on a single unretried request, against a cluster seconds old. The cluster tier passed the
+same assertion seven ways minutes later on its own cluster, so the probe was measuring how fast the
+controller reloaded. That is a defect in the runner and has nothing to do with anything this record
+decided, which is the reason it is one line here rather than a section.
