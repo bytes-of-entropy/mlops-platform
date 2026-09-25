@@ -7,6 +7,9 @@
 # reproducibility, not availability: the Spark image this file used to name was deleted
 # from Docker Hub by its publisher, and a digest pin would have died with the repository
 # just the same. See docs/decisions/005-migrate-off-the-withdrawn-spark-image.md.
+#
+# That has now happened twice, to two publishers, in one file. The second was the artifact store
+# (docs/decisions/026), so the sentence above is a measurement rather than a caution.
 
 # Worker sizing, and nothing else. The Apache image takes a daemon's role from its command
 # rather than from an environment variable, but org.apache.spark.deploy.worker.Worker still
@@ -105,19 +108,42 @@ services:
           cpus: "2.0"
           memory: 7g
 
+  # SeaweedFS, under a service name that still says minio. The name, the volume and the two
+  # variables are deliberately unchanged: the image had to move because `minio/minio` was withdrawn
+  # from Docker Hub -- the repository, not one tag, so the digest pin went with it and this file paid
+  # for the lesson in its own header a second time. Renaming the component is a separate change with
+  # separate consequences, so it is a separate commit. See docs/decisions/026.
   minio:
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
-    command: server /data --console-address ":9001"
+    image: chrislusf/seaweedfs:4.47@sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882
+    # One process holding the whole cluster: master, volume server, filer and the S3 gateway. The
+    # filer is not named because `-s3` starts it either way, and asking for both would suggest the
+    # gateway could be had without it.
+    #
+    # `-s3.port=9000` overrides this image's default of 8333 so that the endpoint every consumer
+    # below already names stays correct. That keeps this change an image swap rather than a port
+    # migration through the compose file, the chart, the guide and the README.
+    command: ["server", "-s3", "-s3.port=9000"]
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
+      # Read only when the filer holds no S3 configuration of its own. That precedence is the
+      # hazard: this gateway starts with no identities and then accepts *any* key offered to it, so
+      # an identity persisted into the volume below outranks these two silently, and the failure is
+      # an open gateway that answers every probe in this file correctly. A kept volume deciding
+      # which credentials are live is record 007 again, in a component replaced for unrelated
+      # reasons. test_object_storage_refuses_a_wrong_credential is what makes enforcement a fact.
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
     ports:
       - "${MINIO_API_HOST_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_HOST_PORT:-9001}:9001"
     volumes:
       - minio-data:/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      # curl, which this image installs by name in its Dockerfile. It ships no `mc`, so the
+      # previous healthcheck would never have reported healthy here -- the Spark mistake again.
+      #
+      # One endpoint, not two. MinIO's `live` and `ready` answered different questions and were
+      # worth probing separately; here /healthz and /status are bound to the same handler, so a
+      # second probe would assert the same thing twice and imply a distinction that does not exist.
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/healthz"]
       interval: 10s
       timeout: 5s
       retries: 12

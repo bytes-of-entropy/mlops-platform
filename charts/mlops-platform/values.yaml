@@ -151,15 +151,22 @@ postgres:
     # different names. Naming one here would pick a fight with whichever cluster does not have it.
     storageClass: ""
 
+# SeaweedFS, under a key that still says minio. `minio/minio` was withdrawn from Docker Hub, so the
+# pin below had to move; the key, the Secret key names and the component label did not, because
+# renaming them changes this chart's interface and its Deployment selector, which is a decision with
+# its own consequences and belongs in its own change. See docs/decisions/026.
 minio:
   image:
-    repository: minio/minio
-    tag: RELEASE.2025-09-07T16-13-09Z
-    digest: sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    repository: chrislusf/seaweedfs
+    tag: "4.47"
+    # An OCI image index rather than a single manifest: this covers linux/amd64, arm64, arm and 386,
+    # so the one digest is correct on an Apple-silicon laptop and on a CI runner both.
+    digest: sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882
     pullPolicy: IfNotPresent
   service:
+    # 9000 is this chart's choice, not the image's default of 8333. Overridden on the command line so
+    # the endpoint MLflow is handed is the number it always was.
     apiPort: 9000
-    consolePort: 9001
   resources:
     requests:
       cpu: 250m

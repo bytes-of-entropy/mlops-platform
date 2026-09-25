@@ -128,9 +128,11 @@ make ps
 | Service | URL | What it stands in for |
 |---|---|---|
 | Spark master UI | http://localhost:8080 | An EMR or Databricks cluster |
-| MinIO console | http://localhost:9001 | S3 |
 | MLflow | http://localhost:5000 | A hosted tracking server |
 | Airflow (full profile) | http://localhost:8082 | A managed scheduler |
+
+Object storage stands in for S3 on port 9000 and has no browser console, so it is reached with an S3
+client rather than opened in a tab.
 
 `make up` starts the full spine, two Spark workers and Airflow included, and wants roughly 20 GB.
 `make down` stops everything and **keeps** your volumes; `make clean` removes them; `make reset` is

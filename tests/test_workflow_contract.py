@@ -189,8 +189,8 @@ def test_every_credential_is_interpolated_in_the_form_that_refuses(variable: str
 def test_no_credential_is_given_a_default() -> None:
     """A default is fine for a port or a database name and never for a credential.
 
-    Seven variables in the compose file carry `:-` defaults and six are host-port overrides, which
-    exist so two checkouts can run side by side. The seventh is `POSTGRES_DB`, a database name. What
+    Six variables in the compose file carry `:-` defaults and five are host-port overrides, which
+    exist so two checkouts can run side by side. The sixth is `POSTGRES_DB`, a database name. What
     must never appear in that list is a credential, because a default credential is a committed
     secret and is exactly what record 009 forbids -- the harm is not that it is weak, it is that it
     works, so a machine with no `.env` starts successfully and nobody notices.

@@ -13,7 +13,12 @@ import pytest
 
 from tests.conftest import COMPOSE_FILE, FULL_PROFILE, REPO_ROOT
 
-CREDENTIAL_KEY = re.compile(r"(PASSWORD|SECRET|TOKEN|KEY|ROOT_USER)$")
+#: Suffixes that mark a value as credential-shaped. `KEY_ID` is here because `AWS_ACCESS_KEY_ID`
+#: ends in neither `KEY` nor `USER` and so was checked by nothing, while its partner
+#: `AWS_SECRET_ACCESS_KEY` was: a literal access key id could have been committed on that line and
+#: no assertion in this file would have objected. Latent while the artifact store also supplied a
+#: `MINIO_ROOT_USER` that was matched; live the moment it stopped.
+CREDENTIAL_KEY = re.compile(r"(PASSWORD|SECRET|TOKEN|KEY_ID|KEY|ROOT_USER)$")
 INTERPOLATED = re.compile(r"^\$\{[A-Z0-9_]+(:[?-][^}]*)?\}$")
 #: A published port's host half: a variable named for the service, with today's number
 #: as its default. `"${MLFLOW_HOST_PORT:-5000}:5000"` matches; `"5000:5000"` does not.
@@ -25,9 +30,14 @@ STATEFUL_SERVICES = {"minio", "postgres", "airflow"}
 # healthcheck names is listed: this is a record of what was verified, not an inventory. `python`
 # for the two python-tagged images because an interpreter is what those images are; `wget` for
 # Spark because that image was inspected once and the finding is written on its healthcheck.
+#
+# `curl` for SeaweedFS because its Dockerfile installs it by name rather than because a base image
+# happened to carry it, which is the stronger kind of evidence available here. The `minio/minio`
+# entry is gone with the image: the repository was withdrawn from Docker Hub, and an entry claiming
+# a binary was verified inside an image nobody can pull again is a claim with nothing behind it.
 IMAGE_PROVIDES: dict[str, frozenset[str]] = {
     "apache/spark": frozenset({"wget"}),
-    "minio/minio": frozenset({"mc"}),
+    "chrislusf/seaweedfs": frozenset({"curl"}),
     "postgres": frozenset({"pg_isready"}),
     "mlops-platform/mlflow": frozenset({"python"}),
     "apache/airflow": frozenset({"python"}),

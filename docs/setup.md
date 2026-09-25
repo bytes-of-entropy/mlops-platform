@@ -788,7 +788,7 @@ Use `./make.ps1 <target>`. Every target is mirrored, and a test asserts the two 
 
 Something on this machine holds a port `make up` wants. The integration tier cannot produce this any
 more, since it publishes nothing at a fixed number, so the holder is another program or an earlier
-stack, and the port is one of `8080`, `7077`, `9000`, `9001`, `5000` or `8082`.
+stack, and the port is one of `8080`, `7077`, `9000`, `5000` or `8082`.
 
 ```powershell
 docker ps --format '{{.Names}}\t{{.Ports}}'

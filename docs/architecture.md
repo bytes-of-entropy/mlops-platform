@@ -20,7 +20,7 @@ Drawn before the code it describes, which is the point of drawing it.
         │  reads and writes tables                                      │  metadata
         │                                                               │
 ┌───────▼────────────────────┐                              ┌───────────▼─────────┐
-│  minio  :9000 / :9001      │◄─── artifacts ───────────────┤  mlflow  :5000      │
+│  minio  :9000              │◄─── artifacts ───────────────┤  mlflow  :5000      │
 │  S3 API, stands in for S3  │                              │  tracking server    │
 └────────────────────────────┘                              └───────────┬─────────┘
                                                                         │  backend store

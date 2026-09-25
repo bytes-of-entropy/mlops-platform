@@ -30,10 +30,6 @@ spec:
       targetPort: api
       protocol: TCP
       name: api
-    - port: {{ .Values.minio.service.consolePort }}
-      targetPort: console
-      protocol: TCP
-      name: console
   selector:
     {{- include "mlops-platform.selectorLabels" (dict "root" . "component" "minio") | nindent 4 }}
 ---
@@ -67,20 +63,29 @@ spec:
           imagePullPolicy: {{ .Values.minio.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.minio.securityContext | nindent 12 }}
+          # The whole cluster in one process -- master, volume server, filer, S3 gateway. `-s3`
+          # starts the filer on its own, so naming it as well would imply the gateway could run
+          # without one. `-dir` and the volume limits come from the image's entrypoint, which
+          # prepends them; only what differs from its defaults is stated here.
           args:
             - server
-            - /data
-            - --console-address
-            - ":{{ .Values.minio.service.consolePort }}"
+            - -s3
+            - -s3.port={{ .Values.minio.service.apiPort }}
           env:
-            # MinIO's own names for its root credentials, from the same Secret keys the rest of the
-            # spine reads. The compose spine gives these the same two values.
-            - name: MINIO_ROOT_USER
+            # The S3 credentials, from the same Secret keys the rest of the spine reads, under the
+            # names this server looks for. They are a *fallback*: consulted only when the filer
+            # holds no S3 configuration of its own, and this server accepts any key at all when it
+            # has neither. So the failure mode is not a refused connection, it is an object store
+            # that answers every probe on this page and authenticates nobody, which is why the
+            # compose tier asserts a wrong credential is rejected rather than asserting these are
+            # set. The alternative, a `-s3.config` identities file, would put a credential in
+            # plaintext on disk and is rejected for that reason alone.
+            - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.credentials.secretName }}
                   key: {{ .Values.credentials.keys.minioRootUser }}
-            - name: MINIO_ROOT_PASSWORD
+            - name: AWS_SECRET_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.credentials.secretName }}
@@ -89,23 +94,22 @@ spec:
             - name: api
               containerPort: {{ .Values.minio.service.apiPort }}
               protocol: TCP
-            - name: console
-              containerPort: {{ .Values.minio.service.consolePort }}
-              protocol: TCP
-          # MinIO publishes two health endpoints that mean different things, so this uses both rather
-          # than pointing two probes at one path. `live` answers once the process is up; `ready`
-          # answers only when the object layer can actually serve a request, which is the one that
-          # should gate traffic.
+          # Two probes against one path, which is the honest shape here. MinIO published `live` and
+          # `ready` as separate questions and they were worth asking separately; this server binds
+          # /healthz and /status to the same handler, so a second path would imply a distinction the
+          # implementation does not make. The probes still differ in what they *do* with the answer:
+          # readiness withdraws the endpoint, liveness restarts the pod, and those remain different
+          # consequences for the same signal.
           readinessProbe:
             httpGet:
-              path: /minio/health/ready
+              path: /healthz
               port: api
             periodSeconds: 10
             timeoutSeconds: 3
             failureThreshold: 3
           livenessProbe:
             httpGet:
-              path: /minio/health/live
+              path: /healthz
               port: api
             initialDelaySeconds: 15
             periodSeconds: 20

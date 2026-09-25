@@ -1,6 +1,6 @@
 apiVersion: v2
 name: mlops-platform
-description: MLflow tracking with its Postgres backend store and MinIO artifact store, on Kubernetes
+description: MLflow tracking with its Postgres backend store and an S3 artifact store, on Kubernetes
 
 # `application`, not `library`: this chart renders workloads. A library chart would be the right
 # answer if the flagships needed to build on these templates, and they do not -- they pin a release
@@ -12,7 +12,12 @@ type: application
 # whenever any part of the repository did would force consumers to re-pin for changes that cannot
 # affect them. Orderable SemVer because record 014 requires a consumer be able to compare and range
 # over it.
-version: 0.1.0
+# Minor rather than patch: `minio.service.consolePort` is gone from values.yaml, and a value a
+# consumer could have been setting disappearing is an interface change however small the diff. The
+# pre-release suffix is the same honesty record 014 asks of a milestone tag -- this version has not
+# been rendered by Helm or deployed to kind, because the machine it was written on has neither. It
+# loses the suffix when it has, not when it looks finished.
+version: 0.2.0-rc.1
 
 # What is inside, rather than what this chart is. Quoted because 2.22.4 unquoted is not a string and
 # a YAML parser is entitled to make it something else. Matches the MLflow the compose spine runs; a
@@ -34,7 +39,8 @@ annotations:
   # What a consumer needs to know before pinning this, stated where a chart repository will show it
   # rather than only in a record it will not read. Both are true and both are limits.
   mlops-platform/scope: >-
-    MLflow, Postgres and MinIO. Spark and Airflow are in the compose spine and deliberately not here:
+    MLflow, Postgres and an S3-compatible artifact store. Spark and Airflow are in the compose spine
+    and deliberately not here:
     neither is a plain Deployment on Kubernetes, and modelling them as one would misrepresent how they
     run. See docs/decisions/024.
   mlops-platform/tested-on: >-
