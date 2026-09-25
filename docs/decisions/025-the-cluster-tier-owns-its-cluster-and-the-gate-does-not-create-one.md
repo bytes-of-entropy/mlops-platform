@@ -369,3 +369,33 @@ and the cost stayed where this record predicted it would. What the episode adds 
 cluster is probed by something outside the suite, and that probe has no tests of its own -- it is
 shell in the runner, verified by running it. That is acceptable for one request against one route, and
 it is the reason the budget was copied from the suite rather than chosen afresh.
+
+## Scored by the next run, 2026-09-25 (15:28): the race recurred, and the diagnostic printed
+
+```
+attempt 1 of 3: status 503, served by nothing that named itself
+  first 300 bytes of what answered: <html> <head><title>503 Service Temporarily Unavailable</title></head>
+  <body> <center><h1>503 Service Temporarily Unavailable</h1></center> <hr><center>nginx</center> </body> </html>
+attempt 2 of 3: status 200, served by nothing that named itself
+-- exit 0, 6s
+```
+
+Two claims in the section above were written as unverified, and this run settled both within six
+seconds of each other.
+
+**The race is not rare.** It fired at 11:45, did not fire at 12:38, and fired again at 15:28 -- twice in
+three runs. A single-attempt probe would therefore have failed this run too, on a cluster whose own tier
+then reported 7 passed in 196 seconds. The window is narrow rather than unreliable: `kubectl` showed the
+three pods at 60s old when `helm --wait` returned, and the route answered on the next attempt five
+seconds later, so the gap between Deployments Available and endpoints picked up is measured in seconds
+and a single request lands inside it about as often as it misses.
+
+**The body was the discriminator, exactly where the header was not.** `<hr><center>nginx</center>` is
+the controller's own error page, so the 503 was an empty upstream and not MLflow refusing for itself --
+the distinction the `Server` header was added to draw and could not, arriving empty here on the 503 as
+it had on the 200. The paragraph above says a diagnostic shipped with a fix is unverified until a
+failure prints it. That is now retired by its own evidence, one run later, which is the shortest such
+interval in this record: the previous instances took days.
+
+Nothing else in the run moved. 392 passed, 10 skipped, 7 deselected at both gates, `sbom/ is unchanged.`
+at both comparisons, the six baseline counts as committed, and every one of the 26 steps at exit 0.
