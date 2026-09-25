@@ -312,3 +312,60 @@ taught nothing about its neighbour. Both now decide, and the runner refuses a di
 
 **Twice in one run, the same lesson from two directions:** a check that produces output rather than a
 verdict is not a check, and a fix applied to an instance does not protect the class.
+
+## Claim tested, 2026-09-25: the route was fine, the question was asked too early
+
+Prediction 5 said nothing would be wrong with the ingress that a Host header does not fix, and closed
+with a line about diagnosis: "A 404 from nginx and a connection refused mean different things here,
+and the tier reports which." The 11:45 run produced a third answer that line did not enumerate, from
+the one probe that is not part of the tier.
+
+The runner's own Ingress step fired a single `curl` the instant `make kind-deploy` returned, and got
+`503`. It asserted on that and exited 1. Minutes later, on a cluster it built itself, the tier passed
+the same route assertion seven ways. So the route was never broken. `helm --wait` returns when three
+Deployments report Available, and nginx answers 503 until it has picked up their endpoints, which
+means a single unretried request measures how fast the controller reloaded rather than whether the
+chart is reachable.
+
+**The suite already knew.** `through_the_ingress` allows three attempts over ten seconds and its
+docstring records why: "The first real run got 200 from `/health` and 503 from the API seconds later."
+The runner's probe was written later, strictly, and without that budget -- so the two disagreed about
+a fact the repository had already established, and the stricter one was wrong. A probe outside the
+suite that is stricter than the suite is not a stronger check, only a noisier one. It now allows the
+same three attempts over ten seconds, and reports which attempt answered, because a 200 on the second
+is evidence about the controller worth keeping rather than a detail to smooth over.
+
+Third instance in this record of a check that only looked like one, and the first of this variant. The
+two before it reported without deciding. This one decided, at a moment when the only honest answer was
+"not yet" -- **a sound verdict at the wrong time, which is indistinguishable from a wrong verdict to
+everyone downstream of it.**
+
+### The diagnostic added with the fix was itself empty
+
+The fix printed the `Server` header alongside the status, on the argument that 503 from nginx is an
+empty upstream while 503 from gunicorn is MLflow refusing for itself. The 12:38 run answered
+`status 200, served by nothing that named itself`: **this controller sends no `Server` header at
+all**, because ingress-nginx clears it when server tokens are off. The discriminator could not
+discriminate, and it took a passing run to show it, since a header absent on a 200 is absent on a 503
+for the same reason.
+
+The body does discriminate -- nginx serves an HTML error page, MLflow serves JSON -- and the tier's
+helper has always reported it, which is the half of that helper that was actually doing the work. The
+probe now prints the first 300 bytes of any non-200 and keeps the header line for a controller that
+does send one. Verified against a local stub on both branches: three attempts and exit 1 with the HTML
+body printed on a 503, one attempt and exit 0 on a 200.
+
+Worth stating because it generalises: **a diagnostic shipped with a fix is unverified until a failure
+prints it.** This one shipped in the same commit as the retry, read plausibly, and was inert. The
+retry itself is still unexercised on its interesting branch -- the 12:38 run answered 200 on the first
+attempt -- and the evidence that the race exists remains the 11:45 failure rather than anything this
+run shows.
+
+### What it says about this record's division
+
+Nothing against it. The failing probe was the runner's, against the operator's cluster; the tier,
+which owns its own, was green in the same run and reported 7 passed in 194 seconds. The division held
+and the cost stayed where this record predicted it would. What the episode adds is that the operator's
+cluster is probed by something outside the suite, and that probe has no tests of its own -- it is
+shell in the runner, verified by running it. That is acceptable for one request against one route, and
+it is the reason the budget was copied from the suite rather than chosen afresh.
