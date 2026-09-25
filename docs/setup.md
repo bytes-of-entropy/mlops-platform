@@ -206,7 +206,7 @@ Copy-Item .env.example .env
 
 | Variable | Where the value comes from |
 | --- | --- |
-| `MINIO_ROOT_USER` | your choice; MinIO wants at least three characters |
+| `MINIO_ROOT_USER` | your choice; it becomes the S3 access key id, and the store imposes no minimum length |
 | `MINIO_ROOT_PASSWORD` | generated |
 | `POSTGRES_USER` | your choice |
 | `POSTGRES_PASSWORD` | generated, and not the same value as any other |
@@ -405,8 +405,13 @@ The thirteen skips divide as five image-resolution checks, one per registry refe
 spine pulls, including the base the one built image comes from (they ask a registry whether each still
 resolves, which needs a docker client); two artifact-store checks; three idempotency tests; and three that
 run the smoke DAG. Eight of them need credentials as well as a runtime -- the two artifact-store checks
-reach into MinIO and the six DAG and idempotency tests start real stacks -- which is why the middle row
-clears five rather than thirteen. There used to be a fourteenth, an empty parameter set where the
+reach into the artifact store and the six DAG and idempotency tests start real stacks -- which is why the
+middle row clears five rather than thirteen.
+
+Both the division above and the four rows in the table predate several commits, and the artifact store
+migration added a third check to the group of two. The figures are left as last measured rather than
+adjusted by arithmetic nobody has run: a derived row is only worth having while it is derived from a
+known state, and the next run on a machine with a daemon is what re-anchors these. There used to be a fourteenth, an empty parameter set where the
 committed-inventory check had no files to run against; committing the inventories turned it into six real
 assertions.
 
@@ -852,7 +857,8 @@ pass fills them all in.
 
 `./make.ps1 reset`, which is `clean` then `up`, and destroys the volume, which is why the doctor names
 it rather than doing it. Targeted, if you would rather keep the MinIO volume: `./make.ps1 down`, then
-`docker volume rm mlops-platform_postgres-data`, then up again.
+`docker volume rm mlops-platform_postgres-data`, then up again. Keeping the artifact store volume is
+the ordinary case and safe; the one time it was not is the entry below.
 
 This is the failure that costs the most to diagnose from the outside, which is why it is now refused
 before a container starts. Postgres reads `POSTGRES_USER` and `POSTGRES_PASSWORD` only while
@@ -880,11 +886,32 @@ It cannot, and this is worth knowing before trying it. The compose project name 
 directory basename, so a new clone into a folder named `mlops-platform` reuses the very same
 `mlops-platform_postgres-data`. New clone, old state. `clean` is the only thing that clears it.
 
-### MinIO authentication failures in the tier's `mc` calls
+### The artifact store accepts a credential it should have refused
 
-Same cause, different symptom: MinIO re-reads its root credentials on every start, so a changed
-`MINIO_ROOT_USER` shows up as an authentication failure rather than as an unhealthy container. Same
-fix.
+The same cause as the volume entries above, pointing the other way, and the more dangerous direction
+of the two. The store reads `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` only when it holds no
+identities of its own, and it keeps identities in the same volume it keeps objects in. A changed
+credential therefore does not announce itself as an authentication failure the way Postgres does. It
+announces nothing: the store carries on honouring whatever the first `up` wrote, and a store that
+never received a credential at all serves every key equally.
+
+`test_object_storage_refuses_a_wrong_credential` is what separates those cases. It presents a key that
+is deliberately not the configured one and requires a refusal, and it is the only check here that
+tells a credential being *configured* from a credential being *enforced* -- the bucket check, the
+round trip and the smoke DAG all present a key the store is free never to examine, and pass either
+way.
+
+When it fails, rule out the volume first, because it is both the likeliest cause and the cheapest to
+eliminate: `./make.ps1 clean`, then up again. If a store that started from an empty volume still
+refuses nothing, the credentials are not reaching the container, and the next line answers that
+without putting a secret on the screen:
+
+```powershell
+docker compose exec minio sh -c 'printenv AWS_ACCESS_KEY_ID >/dev/null && echo set || echo unset'
+```
+
+Reasoning, and why supplying identities in a file was rejected despite fixing this outright, in
+[`decisions/026`](decisions/026-the-artifact-store-moves-to-seaweedfs-and-the-replacement-fails-open.md).
 
 ### `up --wait` times out and names a service as unhealthy
 
@@ -939,7 +966,8 @@ floating tag.
 Read the tag it names before believing that, because the module probes two different kinds of
 reference: the tags this spine pulls, and the `FROM` of the one it builds. A failure naming
 `ghcr.io/mlflow/mlflow:v2.22.4`, `apache/spark:3.5.9-python3`, `apache/airflow:2.11.2-python3.11`,
-`postgres:16.15-alpine` or `minio/minio:…` is the withdrawal case above. A failure naming
+`postgres:16.15-alpine` or `chrislusf/seaweedfs:…` is the withdrawal case above, which has now
+happened twice to two publishers. A failure naming
 `mlops-platform/mlflow:2.22.4` is not, because no registry has heard of a tag this repository produces, so
 that is the sorting itself having regressed, and
 [`decisions/012`](decisions/012-a-built-tag-is-not-a-registry-fact.md) is the entry to read.
