@@ -42,7 +42,7 @@ from tests.conftest import COMPOSE_FILE, REPO_ROOT, describe_process, requires_d
 #: further updates or support".
 ARCHIVED_NAMESPACES = ("bitnami/", "bitnamilegacy/")
 
-MANIFEST_TIMEOUT_SECONDS = 60
+RESOLVE_TIMEOUT_SECONDS = 60
 
 #: A reference pinned the way record 018 requires: a tag a reader recognises, then the bytes.
 DIGEST_PINNED = re.compile(r"^[^\s@]+:[^\s@:]+@sha256:[0-9a-f]{64}$")
@@ -143,14 +143,21 @@ def test_every_pinned_image_still_resolves(reference: str) -> None:
     Asking the registry about a reference is not the same as pulling it, which is what keeps
     this cheap enough to sit beside the rest of the integration tier.
 
-    Asked by digest with the tag dropped, which is narrower than it looks. Given both, the client
-    resolves the *tag* and then checks the answer against the digest, so two things that are not
-    withdrawals fail: a publisher re-pushing a tag the pin no longer matches, and a registry that
-    declines an anonymous read of a tag manifest while serving the pull perfectly well. Both were
-    observed on the same run that catalogued both images successfully, which is the disagreement
-    that got this narrowed. The bytes are what the spine starts from and what a withdrawal takes
-    away, so the bytes are what this asks about; whether a tag still points at them is a different
-    question, asked where the tag matters.
+    Asked by digest with the tag dropped, and asked through buildx. Both narrowings came out of
+    runs where this test disagreed with the rest of the same run. Given a tag as well, the client
+    resolves the *tag* and then checks the answer against the digest, so a publisher re-pushing a
+    tag the pin no longer matches fails here with nothing withdrawn. And `docker manifest inspect`
+    answered `denied` for a ghcr.io digest on a machine where, minutes earlier, the build had taken
+    a pull token for that same registry and read that same digest, and the daemon had pulled the
+    image to run it: the CLI's own registry query is a third auth path, used by nothing else in
+    this spine, and it was the thing that was broken. `buildx imagetools` is the resolver the build
+    itself uses, so a refusal from it is a refusal the spine would actually meet. A client without
+    the buildx plugin fails here rather than skipping, which is the right answer for a spine whose
+    one image is built by bake.
+
+    The bytes are what the spine starts from and what a withdrawal takes away, so the bytes are
+    what this asks about; whether a tag still points at them is a different question, asked where
+    the tag matters.
     """
     binary = shutil.which("docker")
     assert binary is not None, "requires_docker admitted this test with no docker client present"
@@ -158,13 +165,13 @@ def test_every_pinned_image_still_resolves(reference: str) -> None:
     # `DIGEST_PINNED` above guarantees exactly one `@` and a tag before it.
     repository = reference.partition("@")[0].rpartition(":")[0]
     by_digest = f"{repository}@{reference.partition('@')[2]}"
-    argv = [binary, "manifest", "inspect", by_digest]
+    argv = [binary, "buildx", "imagetools", "inspect", by_digest]
     completed = subprocess.run(  # noqa: S603 (fixed argv, resolved path, no shell)
         argv,
         capture_output=True,
         text=True,
         encoding="utf-8",
-        timeout=MANIFEST_TIMEOUT_SECONDS,
+        timeout=RESOLVE_TIMEOUT_SECONDS,
         check=False,
     )
     if completed.returncode != 0:
@@ -178,8 +185,9 @@ def test_every_pinned_image_still_resolves(reference: str) -> None:
                 {
                     "consequence": "these bytes resolve in no configured registry, so nobody can "
                     "start this spine; the fix is a deliberate bump with the new tag committed. "
-                    "This no longer fires on a tag that merely moved, so treat it as a withdrawal "
-                    "until a by-digest pull from another machine says otherwise"
+                    "This no longer fires on a tag that merely moved, nor on the CLI's own "
+                    "manifest query being refused where the build's resolver is not, so treat it "
+                    "as a withdrawal until a by-digest pull from another machine says otherwise"
                 },
             )
         )
