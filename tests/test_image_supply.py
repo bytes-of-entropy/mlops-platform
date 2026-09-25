@@ -25,9 +25,12 @@ the stack starting at all.
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
+import warnings
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -134,10 +137,40 @@ def test_no_image_comes_from_an_archived_namespace(reference: str) -> None:
         )
 
 
+def _resolve(
+    binary: str, by_digest: str, config_dir: Path | None
+) -> tuple[list[str], subprocess.CompletedProcess[str]]:
+    """Ask the resolver the build uses about a digest, with this machine's credentials or with none.
+
+    Point `DOCKER_CONFIG` at an empty directory and the client reads no `config.json` at all: no
+    stored credential, no credential helper, nothing to put on the wire. What comes back is then an
+    answer about the bytes rather than about the machine, which is the only question this test is
+    entitled to ask.
+    """
+    argv = [binary, "buildx", "imagetools", "inspect", by_digest]
+    env = None if config_dir is None else {**os.environ, "DOCKER_CONFIG": str(config_dir)}
+    completed = subprocess.run(  # noqa: S603 (fixed argv, resolved path, no shell)
+        argv,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=RESOLVE_TIMEOUT_SECONDS,
+        env=env,
+        check=False,
+    )
+    return argv, completed
+
+
+def _registry_of(repository: str) -> str:
+    """The host a reference names, for a remedy a reader can run. `docker.io` when it names none."""
+    host = repository.partition("/")[0]
+    return host if "." in host or ":" in host else "docker.io"
+
+
 @pytest.mark.integration
 @requires_docker
 @pytest.mark.parametrize("reference", REGISTRY_REFERENCES)
-def test_every_pinned_image_still_resolves(reference: str) -> None:
+def test_every_pinned_image_still_resolves(reference: str, tmp_path: Path) -> None:
     """The guard the withdrawal needed: an unpullable pin fails here, not halfway through up.
 
     Asking the registry about a reference is not the same as pulling it, which is what keeps
@@ -155,6 +188,13 @@ def test_every_pinned_image_still_resolves(reference: str) -> None:
     the buildx plugin fails here rather than skipping, which is the right answer for a spine whose
     one image is built by bake.
 
+    Asked twice where the first answer is no, and the second attempt carries no credentials at all.
+    A credential the spine never relies on must not be able to report a withdrawal, and one did:
+    ghcr.io answered the client's token request with 403, which is what a registry says to a
+    credential it rejects rather than to a request carrying none, in the same run where the builder
+    took that token and read this very digest. Passing on the second attempt is a fact about the
+    machine, so it passes and says so rather than failing quietly or hiding it.
+
     The bytes are what the spine starts from and what a withdrawal takes away, so the bytes are
     what this asks about; whether a tag still points at them is a different question, asked where
     the tag matters.
@@ -165,32 +205,43 @@ def test_every_pinned_image_still_resolves(reference: str) -> None:
     # `DIGEST_PINNED` above guarantees exactly one `@` and a tag before it.
     repository = reference.partition("@")[0].rpartition(":")[0]
     by_digest = f"{repository}@{reference.partition('@')[2]}"
-    argv = [binary, "buildx", "imagetools", "inspect", by_digest]
-    completed = subprocess.run(  # noqa: S603 (fixed argv, resolved path, no shell)
-        argv,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=RESOLVE_TIMEOUT_SECONDS,
-        check=False,
-    )
-    if completed.returncode != 0:
-        raise AssertionError(
-            describe_process(
-                f"resolving {by_digest}, the bytes {reference} pins",
-                argv,
-                completed.returncode,
-                completed.stdout,
-                completed.stderr,
-                {
-                    "consequence": "these bytes resolve in no configured registry, so nobody can "
-                    "start this spine; the fix is a deliberate bump with the new tag committed. "
-                    "This no longer fires on a tag that merely moved, nor on the CLI's own "
-                    "manifest query being refused where the build's resolver is not, so treat it "
-                    "as a withdrawal until a by-digest pull from another machine says otherwise"
-                },
-            )
+
+    argv, configured = _resolve(binary, by_digest, None)
+    if configured.returncode == 0:
+        return
+
+    anonymous_config = tmp_path / "docker-config-carrying-no-credentials"
+    anonymous_config.mkdir()
+    _, anonymous = _resolve(binary, by_digest, anonymous_config)
+    registry = _registry_of(repository)
+    if anonymous.returncode == 0:
+        warnings.warn(
+            f"{by_digest} resolves with no credentials but not with this machine's, so something "
+            f"here holds one that {registry} rejects: `docker logout {registry}` clears it. The "
+            f"pin is fine, and the spine's own pulls go through a resolver that never sent it.",
+            stacklevel=2,
         )
+        return
+
+    raise AssertionError(
+        describe_process(
+            f"resolving {by_digest}, the bytes {reference} pins, with and without credentials",
+            argv,
+            anonymous.returncode,
+            anonymous.stdout,
+            anonymous.stderr,
+            {
+                "with this machine's credentials": (
+                    f"exit {configured.returncode}\n{configured.stderr or configured.stdout}"
+                ),
+                "consequence": "these bytes resolve in no configured registry, with or without a "
+                "credential, so nobody can start this spine; the fix is a deliberate bump with the "
+                "new tag committed. This no longer fires on a tag that merely moved, nor on a "
+                "credential this machine holds and the spine does not use, so treat it as a "
+                "withdrawal until a by-digest pull from another machine says otherwise",
+            },
+        )
+    )
 
 
 # --------------------------------------------------------------------------------------------------
