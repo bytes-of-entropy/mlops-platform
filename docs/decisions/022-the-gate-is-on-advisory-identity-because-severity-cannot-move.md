@@ -312,3 +312,32 @@ the authoring clone must keep its remote for that reason alone.
 The diff itself arrived as UTF-16LE with CRLF, because PowerShell 5.1's `>` redirect wrote it that way. Ask
 for `--no-pager` and read the file with an explicit encoding, or the first inspection reports zero changed
 files against a diff that plainly has six.
+
+## Correction, 2026-09-24: the notification existed, was delivered, and was not read
+
+The section above stated that a scheduled failure has no reader, that nothing in this repository closes
+that loop, and that notification was the cheapest of two candidate fixes. All three statements were
+wrong. GitHub emailed the repository owner on each of the three failures, those emails were delivered
+successfully, and they were simply not noticed among everything else arriving in the same inbox.
+
+The reasoning that produced the error is worth recording, because it is a general one. The absence of a
+reaction was treated as evidence of an absent mechanism, when it was in fact evidence only that the
+mechanism did not produce attention. Those are different failures with different remedies, and the first
+one led to a recommendation to install something that was already installed.
+
+As such, the remaining position is both simpler and more firmly grounded than it was. Notification is no
+longer a candidate fix, since it has now been tried for three consecutive weeks and has been shown to be
+insufficient on its own. What remains is the option this record described as the more expensive of the
+two, which is to make baseline staleness visible inside the contract tier in the manner that record 020's
+scanner expiry already works, so that the condition surfaces in a suite that is read on every commit
+rather than in a message that competes with every other message.
+
+That option retains the difficulty already noted, which is that a baseline has no natural expiry in the
+way that a scanner's data does, because an untouched baseline is entirely correct whenever nothing new has
+been published. Of particular importance, therefore, is that any such check measure the age of the last
+successful *scan* rather than the age of the baseline file, since the two diverge precisely in the case
+that matters.
+
+The correction is appended rather than applied in place, in keeping with the forward-only rule in
+`BUILD_CONVENTIONS.md` section 3. A reader who arrives at the earlier section first should be able to see
+what it claimed, and what that claim turned out to be worth.
