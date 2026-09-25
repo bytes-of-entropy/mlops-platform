@@ -855,6 +855,50 @@ def test_no_entrypoint_runs_the_whole_suite_except_the_target_that_should() -> N
 POWERSHELL_STDERR_REDIRECTS = ("2>$null", "2>&1", "2>&2")
 
 
+#: Native executables invoked from the mirror. A single-quoted argument on one of these lines is
+#: handed straight to the process, which is where 5.1 drops embedded double quotes.
+NATIVE_EXES = ("docker", "kubectl", "helm", "kind", "git")
+
+#: A single-quoted PowerShell literal, captured so its contents can be inspected.
+SINGLE_QUOTED = re.compile(r"'([^']*)'")
+
+
+def test_no_native_argument_in_make_ps1_carries_an_embedded_double_quote() -> None:
+    """Windows PowerShell 5.1 strips double quotes from an argument handed to a native executable.
+
+    Record 025 documents this and nothing enforced it, so on 2026-09-04 it recurred. `push` was
+    given `--format '{{index .Config.Labels "com.docker.compose.service"}}'`; docker received the
+    template with the inner quotes gone, parsed `com` as a function name, and exited 64. The target
+    threw before tagging, so nothing wrong was published -- it failed closed by luck of ordering
+    rather than by design.
+
+    The sharp part is the timing. That same push arm had been audited for exactly this trap a few
+    hours earlier and cleared, correctly, because it had no embedded quotes at the time. Then an
+    argument with embedded quotes was added to the file the audit had just passed. An audit is a
+    statement about a moment; a test is a statement about every moment after it, which is the
+    difference this assertion exists to make.
+
+    The earlier instance was a `kubectl patch` with inline JSON, fixed by moving the JSON to
+    `--patch-file`. The fix here is the same shape: ask for `{{json .Config.Labels}}`, which needs
+    no inner quotes, and parse it in PowerShell where quoting is the language's problem rather than
+    the handoff's.
+    """
+    offending = []
+    for number, line in enumerate(
+        (REPO_ROOT / "make.ps1").read_text(encoding="utf-8").splitlines(), start=1
+    ):
+        stripped = line.strip()
+        if stripped.startswith("#") or not any(exe in line for exe in NATIVE_EXES):
+            continue
+        for literal in SINGLE_QUOTED.findall(line):
+            if '"' in literal:
+                offending.append(f"make.ps1:{number}: {literal}")
+    assert not offending, (
+        "a single-quoted argument to a native executable carries a double quote, which 5.1 will "
+        f"strip before the process sees it: {offending}"
+    )
+
+
 def test_make_ps1_never_redirects_a_native_commands_stderr() -> None:
     """The trap that killed `kind-deploy` on its first real run, on its very first line.
 

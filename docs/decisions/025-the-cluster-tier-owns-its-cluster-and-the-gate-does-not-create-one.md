@@ -259,3 +259,56 @@ first execution, which is the lesson the four tier defects taught.
 **M2 is closed at `v0.3.0`.** What it does not include is unchanged and still worth naming: EKS
 portability, which the chart's structure supports and nothing here tests, and the GHCR push, which
 record 023 sequences after the repository publishes.
+
+## Prediction scored, 2026-09-04: the quote trap recurred, in an argument written after its own audit
+
+`make push` failed on the build machine with
+
+```
+template parsing error: template: :1: function "com" not defined
+docker image inspect failed with exit code 64
+```
+
+The argument was `--format '{{index .Config.Labels "com.docker.compose.service"}}'`. 5.1 dropped the inner
+double quotes, docker received `index .Config.Labels com.docker.compose.service`, read `com` as a function
+name, and exited 64. **Fourth instance of the class this record exists for, and the second of this exact
+variant** -- the first was a `kubectl patch` with inline JSON, fixed by moving the JSON to `--patch-file`.
+
+**It failed closed, by ordering rather than by design.** The check sat before the `docker tag`, so the
+target threw and published nothing. Had it sat two lines later the wrong image would have gone out with a
+guard that had never run. That is luck, and it is worth writing down as luck.
+
+### The part that matters is the timing, not the trap
+
+That same `push` arm was audited for exactly this trap earlier the same day, before the guard was written.
+The audit's conclusion was recorded and was **correct**: "the Go template has no embedded double quotes, so
+the argument-handoff trap can't fire either." Hours later an argument with embedded double quotes was added
+to the arm that statement was about.
+
+So the failure is not that the class was forgotten. It is that **an audit is a statement about a moment and
+was treated as a property of the file.** Five assertions in this repository hold parts of this class
+textually; none covered embedded quotes, because that instance had been handled by moving JSON out of the
+argument rather than by asserting the shape. A defect fixed by restructuring leaves nothing behind that
+notices the next one.
+
+`test_no_native_argument_in_make_ps1_carries_an_embedded_double_quote` now holds it: every single-quoted
+literal on a line naming a native executable, asserted to contain no double quote. Checked against both
+known instances before being trusted -- the 2026-09-04 template and the earlier `kubectl patch` JSON are
+both caught, and the replacement is clean.
+
+The fix is the same shape as the first instance: ask for `{{json .Config.Labels}}`, which needs no inner
+quotes, and parse it in PowerShell, where quoting is the language's problem rather than the handoff's.
+
+### A second defect in the same run, of the same shape as one already fixed
+
+The batch runner printed `git status --porcelain`, showed six modified `sbom/*.known.txt` advisory
+baselines, and ran every later step anyway -- four builds and a publish against a tree that did not match
+the commit those steps claimed to be exercising.
+
+That is the *same defect* as the remote check sitting one line below it in the same function, which had
+already been found and fixed for exactly this reason: it reported without deciding. Fixing one instance
+taught nothing about its neighbour. Both now decide, and the runner refuses a dirty tree unless given
+`--allow-dirty`, mirroring `make-transfer.ps1`.
+
+**Twice in one run, the same lesson from two directions:** a check that produces output rather than a
+verdict is not a check, and a fix applied to an instance does not protect the class.

@@ -197,10 +197,17 @@ switch ($Target) {
         # rather than the tracking server. Building the one service again claims the tag back
         # deterministically rather than leaving it to whichever export finished last.
         Invoke-Checked 'docker' ($Compose + @('build', 'mlflow'))
-        $service = & docker image inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' $local
+        # `{{json .Config.Labels}}` and a parse, not `{{index .Config.Labels "..."}}`. The label key
+        # contains dots so a Go template has to quote it, and 5.1 strips embedded double quotes from an
+        # argument handed to a native executable: docker received `index .Config.Labels
+        # com.docker.compose.service`, read `com` as a function name, and exited 64. That is the trap
+        # record 025 already documents, reintroduced here by an argument written after the audit that
+        # checked for it. A test now holds the class textually rather than a paragraph asking nicely.
+        $labels = & docker image inspect --format '{{json .Config.Labels}}' $local
         if ($LASTEXITCODE -ne 0) { throw "docker image inspect failed with exit code $LASTEXITCODE" }
+        $service = ($labels | ConvertFrom-Json).'com.docker.compose.service'
         if ("$service".Trim() -ne 'mlflow') {
-            throw ('the tag holds the {0} variant, not mlflow; refusing to publish it' -f "$service".Trim())
+            throw ('the tag holds the {0} variant, not mlflow; refusing to publish' -f "$service".Trim())
         }
 
         Invoke-Checked 'docker' @('tag', $local, $remote)
