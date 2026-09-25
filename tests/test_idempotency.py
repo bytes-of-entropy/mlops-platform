@@ -15,11 +15,49 @@ from __future__ import annotations
 import pytest
 
 from tests.conftest import requires_docker, requires_local_credentials
-from tests.stackops import QUICKSTART, Stack
+from tests.stackops import PAYLOAD, QUICKSTART, Stack, payload
 
 pytestmark = [pytest.mark.integration, requires_docker, requires_local_credentials]
 
 stack = Stack(QUICKSTART)
+
+#: Its own bucket rather than the artifact root, so a surviving marker cannot be mistaken for a
+#: surviving artifact, and so creating it exercises the write path a reviewer's first `up` takes.
+MARKER_BUCKET = "idempotency"
+MARKER_KEY = "marker"
+MARKER_BODY = "persisted"
+
+#: Both snippets run in the MLflow container and speak S3 over the network, rather than running a
+#: client inside the store: the store image ships none, and the property under test is that the
+#: volume kept the object, which is independent of where the request came from. Credentials and the
+#: endpoint come from that container's own environment, so nothing here puts them in an argv.
+WRITE_MARKER = f"""
+import os
+import boto3
+
+client = boto3.client("s3", endpoint_url=os.environ["MLFLOW_S3_ENDPOINT_URL"])
+names = [entry["Name"] for entry in client.list_buckets().get("Buckets") or []]
+if {MARKER_BUCKET!r} not in names:
+    client.create_bucket(Bucket={MARKER_BUCKET!r})
+client.put_object(Bucket={MARKER_BUCKET!r}, Key={MARKER_KEY!r}, Body={MARKER_BODY!r}.encode())
+"""
+
+#: A missing bucket and a missing key raise the same class and mean different things, so the error
+#: code comes back rather than being flattened into an absent body.
+READ_MARKER = f"""
+import json, os
+import boto3
+from botocore.exceptions import ClientError
+
+client = boto3.client("s3", endpoint_url=os.environ["MLFLOW_S3_ENDPOINT_URL"])
+try:
+    body = client.get_object(Bucket={MARKER_BUCKET!r}, Key={MARKER_KEY!r})["Body"].read().decode()
+except ClientError as error:
+    outcome = {{"body": None, "code": error.response["Error"]["Code"]}}
+else:
+    outcome = {{"body": body, "code": None}}
+print({PAYLOAD!r} + json.dumps(outcome))
+"""
 
 
 def test_down_then_up_reaches_the_same_healthy_set() -> None:
@@ -50,21 +88,16 @@ def test_state_survives_down_and_up() -> None:
     """`make down` keeps volumes, so an object written before it is readable after it."""
     stack.up()
     try:
-        stack.shell(
-            "minio write",
-            "minio",
-            "mc alias set local http://localhost:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD"
-            " >/dev/null && mc mb --ignore-existing local/idempotency"
-            " && echo persisted | mc pipe local/idempotency/marker",
-        )
+        stack.check("marker write", "exec", "-T", "mlflow", "python", "-c", WRITE_MARKER)
         stack.down()
         stack.up()
-        read = stack.shell(
-            "minio read",
-            "minio",
-            "mc alias set local http://localhost:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD"
-            " >/dev/null && mc cat local/idempotency/marker",
+        reported = stack.check("marker read", "exec", "-T", "mlflow", "python", "-c", READ_MARKER)
+        outcome = payload(reported.stdout, "marker read")
+        assert outcome["body"] == MARKER_BODY, (
+            f"s3://{MARKER_BUCKET}/{MARKER_KEY} read back as {outcome['body']!r} rather than "
+            f"{MARKER_BODY!r} (error code {outcome['code']}), so the down/up cycle did not keep "
+            "what was written before it. NoSuchBucket means the volume itself was replaced; "
+            "NoSuchKey means the volume survived and its contents did not"
         )
-        assert "persisted" in read
     finally:
         stack.down()
