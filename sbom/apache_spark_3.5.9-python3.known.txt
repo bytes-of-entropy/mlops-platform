@@ -25,6 +25,7 @@ GHSA-7286-pgfv-vxvh
 GHSA-735f-pc8j-v9w8
 GHSA-78wr-2p64-hpwj
 GHSA-7pwc-h2j2-rjgj
+GHSA-8wv5-x4w7-5gww
 GHSA-93wv-jw9v-4972
 GHSA-95q3-pppp-r683
 GHSA-c27h-mcmw-48hv

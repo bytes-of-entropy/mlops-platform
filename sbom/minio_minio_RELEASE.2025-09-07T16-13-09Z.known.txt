@@ -24,10 +24,12 @@ CVE-2026-9547
 GHSA-3rh2-v3gr-35p9
 GHSA-5cgq-3rg8-m6cv
 GHSA-5cx5-wh4m-82fh
+GHSA-6c5v-hqjr-5xxp
 GHSA-6g7g-w4f8-9c9x
 GHSA-78h2-9frx-2jm8
 GHSA-89gr-r52h-f8rx
 GHSA-8rm2-7qqf-34qm
+GHSA-8wv5-x4w7-5gww
 GHSA-9c4q-hq6p-c237
 GHSA-9h8m-3fm2-qjrq
 GHSA-f5wc-c3c7-36mc
@@ -42,6 +44,7 @@ GHSA-p77j-4mvh-x3m3
 GHSA-q4h4-gmj2-qvw2
 GHSA-rm3j-f69w-wqmq
 GHSA-vgwf-h737-ff37
+GHSA-vp52-pcj8-j9qc
 GHSA-w879-237q-wc7r
 GHSA-wf45-q9ch-q8gh
 GHSA-wg65-39gg-5wfj
@@ -75,3 +78,5 @@ GO-2026-6089
 GO-2026-6090
 GO-2026-6107
 GO-2026-6303
+GO-2026-6354
+GO-2026-6355
