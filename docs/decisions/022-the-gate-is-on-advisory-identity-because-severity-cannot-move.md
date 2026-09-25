@@ -266,5 +266,49 @@ Two findings, one retracted and one new, move the count not at all and fire the 
 the swap is caught; a pure retraction is invisible. That is probably right, since a retracted advisory is
 not a risk, but it was never a decision and is recorded now as one not yet taken.
 
-**What is not yet known** is what happened to the other five baselines. The diff read so far covers
-`apache_airflow` only, and `git status` reported six files modified.
+### The complete delta, 2026-09-24: 21 added and 2 removed across all six
+
+All six baselines moved. The earlier reading covered `apache_airflow` only because a pager stopped after one
+screenful, which also hid three of that image's own nine additions.
+
+| image | added | removed |
+| --- | --- | --- |
+| `apache/airflow` | 9 | 2 |
+| `minio/minio` | 5 | 0 |
+| `postgres` | 2 | 0 |
+| `ghcr.io/mlflow/mlflow` | 2 | 0 |
+| `mlops-platform/mlflow` | 2 | 0 |
+| `apache/spark` | 1 | 0 |
+
+**Two coherence checks pass, and they are the reason to trust the rest.** `mlops-platform/mlflow` is built
+`FROM ghcr.io/mlflow/mlflow`, and both gained exactly the same pair -- `CVE-2026-75803` and
+`GHSA-gqvg-gmmx-x4hm`. A built image whose advisories diverged from its own base would mean the cataloguer
+was matching something other than package contents. It does not.
+
+**One advisory reaches four of the six images.** `CVE-2026-75803` appears against airflow, postgres and both
+mlflow images -- spanning a Debian base and an Alpine one -- so whatever it names is either a very widely
+vendored component or a match on something common to almost any image. That single identifier accounts for
+four of the twenty-one additions and is the one worth reading first, because an advisory that crosses base
+distributions is either the most important thing in this diff or the least.
+
+`GHSA-8wv5-x4w7-5gww` appears in both `minio` and `spark`, which share no language runtime, and is worth the
+same question.
+
+### These edits cannot reach here the way everything else does
+
+The baselines were regenerated on the build machine, because that is the only machine that can run a scan.
+Every other change in this portfolio is authored on the laptop and travels one way, by bundle, to be verified
+there. **This change runs the other direction and the bundle flow has no path for it.**
+
+`mlops-platform` has an `origin` on both machines, so the reverse path exists: commit the reviewed baselines
+on the build machine, push, and fetch them on the authoring machine. That is the route to use, and it is
+better than copying six files by hand -- git moves the bytes, so nothing depends on an editor preserving LF
+endings in a file the suite reads.
+
+Worth stating plainly because it is a standing property rather than a one-off: **`scan-accept` will always
+originate on the build machine**, so a baseline update is the one kind of change that flows backwards, and
+the authoring clone must keep its remote for that reason alone.
+
+The diff itself arrived as UTF-16LE with CRLF, because PowerShell 5.1's `>` redirect wrote it that way. Ask
+for `--no-pager` and read the file with an explicit encoding, or the first inspection reports zero changed
+files against a diff that plainly has six.
