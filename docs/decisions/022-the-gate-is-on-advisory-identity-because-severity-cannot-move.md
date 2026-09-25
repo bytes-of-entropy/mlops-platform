@@ -216,3 +216,55 @@ minutes reproducing a fact already on my screen. The runner now refuses to start
 steps call is undefined, which turns that class of failure from a last-step surprise into a
 first-second one, and the three helpers that had been defined *below* the step list — which is what
 made the deletion possible — now sit above it with the others.
+
+## Claim tested, 2026-09-24: the gate fired three times and nobody was told
+
+`supply/findings.py` says of this gate that "it does mean the gate moves on somebody else's schedule."
+Three weeks later that sentence has evidence. The weekly `supply` workflow -- `cron: "17 6 * * 1"` --
+**failed on 2026-09-08, 2026-09-15 and 2026-09-22**, and the failures sat unread until someone went
+looking for an unrelated reason.
+
+What fired it is the gate doing precisely its job. Between 2026-09-04 and 2026-09-24 the vulnerability
+database published new advisories against images this spine runs. For `apache/airflow` alone the
+regenerated baseline shows **six identifiers added** -- `CVE-2026-75803`, `-76642`, `-78408`, `-78409`,
+`-78410`, `-85091` -- none of which is in the committed baseline. An advisory absent from the baseline is
+what this gate exists to refuse, so it refused, weekly, correctly, three times.
+
+### The defect is not the gate. It is that a scheduled failure has no reader
+
+This record and record 019 both reasoned about what the gate should fire on. Neither asked **who finds out
+when it does.** A push-triggered failure is seen because somebody pushed and is watching; a scheduled
+failure at 06:17 on a Monday is seen only by whoever happens to open the Actions tab. Nothing in this
+repository or its documents closes that loop.
+
+So the weekly scan has been a **latent red for three weeks**, and the mechanism that was supposed to be the
+portfolio's most autonomous check was the one nobody checked. That is worse than not having it, in one
+specific sense: a weekly gate nobody reads produces a false impression that images are being watched.
+
+Two candidate fixes, neither applied here because the choice is not this record's to make:
+
+1. **Notification.** GitHub emails the repository owner when a scheduled workflow fails; whether that
+   reaches this owner is unverified and one setting away from being known. Cheapest, and outside the
+   repository.
+2. **Make a stale baseline visible where somebody already looks.** The gate's freshness could be asserted
+   in the contract tier the way record 020's scanner expiry already is -- that pin fails the suite on
+   2027-03-01 without anyone remembering it exists. The same shape applied here would mean a baseline older
+   than some interval fails locally, which turns a Monday nobody reads into a red suite everybody does.
+
+Option 2 is the one consistent with how this repository has handled every other "somebody must remember"
+requirement, and it is also the more expensive, because a baseline has no natural expiry the way a
+scanner's data does -- an untouched baseline is entirely correct if nothing new was published.
+
+### Also observed, and not covered by this gate at all
+
+The same regenerated baseline **removed two identifiers**: `CVE-2026-82474` and `GHSA-2r5m-76wx-56gx`. A
+removal means the database retracted the advisory or stopped matching it to a package here.
+
+This gate fires on additions. A removal passes it silently, and the argument in this record for identity
+over severity -- that a set difference cannot hide a swap -- covers a swap only in the direction that adds.
+Two findings, one retracted and one new, move the count not at all and fire the gate on the addition, so
+the swap is caught; a pure retraction is invisible. That is probably right, since a retracted advisory is
+not a risk, but it was never a decision and is recorded now as one not yet taken.
+
+**What is not yet known** is what happened to the other five baselines. The diff read so far covers
+`apache_airflow` only, and `git status` reported six files modified.
