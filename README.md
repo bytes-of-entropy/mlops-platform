@@ -16,7 +16,7 @@ and a different docker, and they came back **byte-identical**; the section in
 [`docs/decisions/019`](docs/decisions/019-the-committed-artifact-is-a-package-inventory-and-every-scan-exception-expires.md)
 that said two hosts agreeing "stays untested rather than assumed" is now scored.
 
-**The image is published, and its digest is reproducible from this commit.**
+**The image is published, and every digest it has been published under is recorded.**
 
 ```
 docker pull ghcr.io/bytes-of-entropy/mlops-platform/mlflow:2.22.4
@@ -26,6 +26,9 @@ One image, not six: the other five belong to other people, and republishing them
 mean vouching for artifacts this project did not build. Build attestations are deliberately disabled,
 because leaving them on made every build export a fresh index digest over unchanging layers -- so a
 published digest identified a build rather than a commit, which is the opposite of what a digest is for.
+Disabling them was necessary without being sufficient, because Compose writes its own version into
+every image it builds, so upgrading Docker Desktop moved the published digest again on 2026-09-25 over
+layers the registry confirmed it already had.
 [`docs/decisions/023`](docs/decisions/023-only-the-image-this-repository-builds-is-published-and-not-before-the-repository-is.md)
 records the measurement, every digest published, and the two defects that shipped before it: a target that
 printed a correct digest beside a reference naming Docker Hub, and a race between two services sharing one

@@ -117,6 +117,7 @@ stays untested until the repository publishes.
 | --- | --- | --- |
 | `4f5f850` | `2.22.4` | `sha256:7d41f0696592d57e118e75cc21d55c4949c32f2a5ff64f1155bd672cd7c2bdde` — an *index* digest, irreproducible, and superseded |
 | `f894289` | `2.22.4` | `sha256:0c27cd2d123479f8fa055f0c1796bcedf5c0994d332ed5f2f807a7c58dd0c5fe` — reproducible, but the **minio-init** variant |
+| `157a382` | `2.22.4` | `sha256:f1b45843b9ac6fab8c7053439418a2b6450a1dd5d64fd8001f00c0b931521fd7`, the **mlflow** variant at last, published 2026-09-25 under Compose 5.5.1 |
 
 That digest is `ghcr.io/bytes-of-entropy/mlops-platform/mlflow@sha256:7d41f069...`, and it identifies
 **one build rather than a commit**. The distinction is not pedantry and the section below explains it:
@@ -535,3 +536,70 @@ wrapped, which is a different kind of churn entirely.
 
 All three predictions in this record's second round are now scored: 1 confirmed, 2 confirmed, 3 resolved
 against the guess about which variant would win.
+
+## Prediction scored, 2026-09-25: the guard held, and the digest it published was not the one predicted
+
+The third push, made from the build machine twenty four days after the second, against an image whose
+build context has not changed since `f894289`. A positive control was run before the push rather than
+inferred from an empty result: `git log --oneline -- images/mlflow` returns eight commits over all of
+history and none over `f894289..HEAD`, so the path filter that reports no change is a filter that would
+have reported one.
+
+**The guard is confirmed, and it was confirmed on a run that needed it.** The full build exported
+mlflow's manifest as `f1b45843` and minio-init's as `6b15aa37`, with minio-init exporting second, so the
+shared tag was held by the bucket initialiser exactly as it was on 2026-09-01. The single-service rebuild
+then re-exported `f1b45843`, the label read `mlflow`, and the push reported that same digest. Without the
+rebuild and the refusal standing behind it, this run would have republished the initialiser a second time,
+which makes this the first evidence that the guard prevents the defect rather than merely describing it.
+
+**Prediction 1 is confirmed in its mechanism and falsified in its value.** The digest the push reported
+does equal the manifest the build exported, and that digest is not the predicted `45e78a9d`. Stability
+across rebuilds was measured four times within a single sitting and was then written down as a property of
+the commit, which it is not.
+
+**The cause was measured rather than guessed, and it is a label.** The 2026-09-01 artifact is still
+addressable by its digest, so it was pulled back from the registry and its configuration labels compared
+against the image built today. The two sets are identical in five of their seven entries, and they differ
+in `com.docker.compose.service`, which is the variant already understood, and in
+`com.docker.compose.version`, which moved from `5.4.0` to `5.5.1`. Compose stamps its own version into
+every image it builds, so upgrading Docker Desktop rewrites the configuration of every image in the
+project, and a manifest digest covers the configuration as well as the layers.
+
+The comparison can be made controlled, because both variants were exported in both runs. Holding the
+service label constant at `minio-init`, Compose `5.4.0` produced `0c27cd2d` and Compose `5.5.1` produced
+`6b15aa37`. One variable moved, and the digest moved with it.
+
+**The registry confirms that nothing in the filesystem changed.** All eight layers came back `Layer
+already exists`, and the push reported `size: 1820`, which matches the second push's single manifest
+rather than the first push's index at `856`. Identical layers, a new published identity, for the third
+time in this record and now for a third distinct reason.
+
+**So the phrase this record should stop using is "reproducible from the commit".** The layers are
+reproducible from the commit. The published digest is reproducible from the commit together with the
+toolchain that built it, and Compose's version belongs to that toolchain in the strong sense that it is
+written into the artifact. The second row above should therefore be read as reproducible under Compose
+`5.4.0`, and every row as a record of what was published on a date rather than a value a reader can
+regenerate later, which is the conclusion the first row reached for an unrelated reason.
+
+**What this does to record 019's argument is strengthen it again.** Committing package inventories rather
+than digests was defended against a base image being repinned, was then found to absorb a change in the
+image's manifest shape, and now absorbs a change in the version of the tool that assembles it. Three kinds
+of identity churn, none of which moves a committed artifact. The test that speaks to this is the build
+machine's own `make sbom` followed by `git diff --exit-code -- sbom/`, and CI's green `supply` run on
+`157a382` does not answer it, because a Linux runner brings its own Compose and would not reproduce the
+drift being asked about.
+
+**The residual, named rather than closed.** The Docker Engine and Compose versions in use on 2026-09-01
+were never recorded, so a simultaneous change in how BuildKit serialises an image configuration cannot be
+excluded as a second mover. The label difference is sufficient to explain a different digest and is not
+proven to be the whole of the difference. Today's readings are therefore recorded here so that the next
+comparison has a measurement to work from rather than a recollection: **Docker Engine 29.8.0 and Compose
+5.5.1**, with the label set as quoted above.
+
+### Prediction (recorded before the next push)
+
+1. No further push of `2.22.4` from this machine moves the digest until either the build context changes or
+   Compose's version does, and the next Compose upgrade moves it again with no layer touched. This is cheap
+   to score, because the target that publishes already reads both the label and the digest.
+2. The inventories committed under `sbom/` do not move across that upgrade either. Scoring it wants the
+   build machine's own `make sbom` rather than CI's, for the reason given above.
