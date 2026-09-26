@@ -30,8 +30,10 @@ content: two places to describe the same YAML, which is one more than can stay a
 ## Deferred, and why
 
 M4 (model registry and promotion), M5 (drift detection and retrain trigger) and M6 (canary and
-rollback) are deferred until two real workloads exist to promote, monitor and roll back. The
-reasoning is in `docs/decisions/001`. They land after the flagships, as dated additions.
+rollback) are deferred. The reasoning is in `docs/decisions/001`. The condition that releases them is
+one real model from `aml-graph-detection` to promote, monitor and roll back, which now exists; what
+defers them today is the cross-repo order, which places them after that repository publishes
+(`docs/decisions/029`). They land then, as dated additions.
 
 ## Commit order
 

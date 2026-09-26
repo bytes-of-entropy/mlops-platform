@@ -73,4 +73,5 @@ pin rather than a moving target.
 
 ## What is not here yet
 
-Terraform (M3). Registry, drift and canary are deferred; see `docs/decisions/001`.
+Terraform (M3). Registry, drift and canary are deferred; see `docs/decisions/001`, and
+`docs/decisions/029` for the condition that releases them and the reason they are still held.
