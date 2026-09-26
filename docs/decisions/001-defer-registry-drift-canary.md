@@ -4,6 +4,10 @@
 - **Status:** accepted
 - **Component:** repo-wide
 - **Milestone:** M0
+- **Amended by:** record 028, because the milestone numbers used below are the retired scheme and the
+  M3, M4 and M5 named here are M4, M5 and M6 now; record 029, because the release condition in the
+  title and in the decision is one real model rather than two workloads, Repo 2 having been dissolved.
+  The decision itself, and everything argued for it below, is unchanged by either
 
 ## Context
 
